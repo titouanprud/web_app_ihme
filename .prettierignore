@@ -1,0 +1,9 @@
+dist
+node_modules
+package-lock.json
+# Fichiers fournis par l'enseignant : on ne les reformate pas
+.github
+deploy
+Dockerfile
+.dockerignore
+README.md

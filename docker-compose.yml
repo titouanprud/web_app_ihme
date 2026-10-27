@@ -1,0 +1,20 @@
+# PostgreSQL pour le développement local uniquement.
+# Express et Vite tournent sur le PC avec `npm run dev`.
+# Les valeurs ${...} sont lues dans le fichier .env (non versionné).
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-coachplan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Définir POSTGRES_PASSWORD dans .env}
+      POSTGRES_DB: ${POSTGRES_DB:-coachplan}
+    ports:
+      # Accessible seulement depuis ce PC (127.0.0.1), pas depuis le réseau.
+      - '127.0.0.1:5432:5432'
+    volumes:
+      # Volume nommé : les données survivent à `docker compose down`.
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
