@@ -1,0 +1,13 @@
+# Dépendances installées par npm (se réinstallent avec `npm install`)
+node_modules
+
+# Fichiers générés par `npm run build`
+dist
+
+# Variables d'environnement locales : contiennent des mots de passe
+.env
+
+# Fichiers d'accès privés du cours : contiennent le jeton de déploiement
+acces-*.txt
+deploy.curl
+.private/
