@@ -19,13 +19,16 @@ export default function Layout() {
           {user && (
             <nav className="header-nav">
               {user.role === 'coach' ? (
-                <NavLink to="/coach">
-                  Mes athlètes
-                  <Compteur
-                    nombre={(notifs?.demandesEnAttente ?? 0) + (notifs?.messagesNonLus ?? 0)}
-                    libelle="nouveautés"
-                  />
-                </NavLink>
+                <>
+                  <NavLink to="/coach">
+                    Mes athlètes
+                    <Compteur
+                      nombre={(notifs?.demandesEnAttente ?? 0) + (notifs?.messagesNonLus ?? 0)}
+                      libelle="nouveautés"
+                    />
+                  </NavLink>
+                  <NavLink to="/bibliotheque">Bibliothèque</NavLink>
+                </>
               ) : (
                 <>
                   <NavLink to="/athlete" end>

@@ -338,6 +338,87 @@ describe('blocs de séance', () => {
   });
 });
 
+describe('duplication et bibliothèque', () => {
+  test('dupliquer une séance vers une autre date et un autre de ses athlètes', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const athlete2 = await creerCompte('athlete');
+    await demander(athlete2, coach);
+    await repondre(coach, athlete2);
+
+    const seance = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: athlete.user.id },
+    });
+    const copie = await api(`seances/${seance.body.id}/dupliquer`, {
+      method: 'POST',
+      token: coach.token,
+      body: { date: '2026-11-04', athleteId: athlete2.user.id },
+    });
+    assert.equal(copie.status, 201);
+    assert.notEqual(copie.body.id, seance.body.id);
+    assert.equal(copie.body.date, '2026-11-04');
+    assert.equal(copie.body.athleteId, athlete2.user.id);
+    assert.equal(copie.body.titre, SEANCE.titre);
+    assert.equal(copie.body.statut, 'prevue');
+  });
+
+  test('impossible de dupliquer la séance d’un autre coach ou vers un athlète qui n’est pas le sien', async () => {
+    const a = await creerCoachEtAthlete();
+    const b = await creerCoachEtAthlete();
+    const seanceA = await api('seances', {
+      method: 'POST',
+      token: a.coach.token,
+      body: { ...SEANCE, athleteId: a.athlete.user.id },
+    });
+    const parB = await api(`seances/${seanceA.body.id}/dupliquer`, {
+      method: 'POST',
+      token: b.coach.token,
+      body: { date: '2026-11-04', athleteId: b.athlete.user.id },
+    });
+    assert.equal(parB.status, 404);
+    const versAthleteDeB = await api(`seances/${seanceA.body.id}/dupliquer`, {
+      method: 'POST',
+      token: a.coach.token,
+      body: { date: '2026-11-04', athleteId: b.athlete.user.id },
+    });
+    assert.equal(versAthleteDeB.status, 403);
+  });
+
+  test('bibliothèque : chaque coach gère uniquement ses propres modèles', async () => {
+    const coach = await creerCompte('coach');
+    const autreCoach = await creerCompte('coach');
+    const { date: _date, ...modele } = SEANCE;
+
+    const cree = await api('seances-types', { method: 'POST', token: coach.token, body: modele });
+    assert.equal(cree.status, 201);
+    assert.equal((await api('seances-types', { token: coach.token })).body.length, 1);
+    assert.deepEqual((await api('seances-types', { token: autreCoach.token })).body, []);
+
+    const chemin = `seances-types/${cree.body.id}`;
+    const modifAutre = await api(chemin, {
+      method: 'PUT',
+      token: autreCoach.token,
+      body: { ...modele, titre: 'Piraté' },
+    });
+    assert.equal(modifAutre.status, 404);
+    assert.equal((await api(chemin, { method: 'DELETE', token: autreCoach.token })).status, 404);
+
+    const modif = await api(chemin, {
+      method: 'PUT',
+      token: coach.token,
+      body: { ...modele, titre: 'Footing long' },
+    });
+    assert.equal(modif.body.titre, 'Footing long');
+    assert.equal((await api(chemin, { method: 'DELETE', token: coach.token })).status, 204);
+  });
+
+  test('un athlète n’a pas accès à la bibliothèque', async () => {
+    const athlete = await creerCompte('athlete');
+    assert.equal((await api('seances-types', { token: athlete.token })).status, 403);
+  });
+});
+
 describe('demandes coach / athlète', () => {
   test('une demande en attente ne donne encore aucun droit', async () => {
     const coach = await creerCompte('coach');

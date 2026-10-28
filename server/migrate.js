@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS retours (
   date             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Bibliothèque de séances types (modèles sans date) de chaque coach
+CREATE TABLE IF NOT EXISTS seances_types (
+  id               SERIAL PRIMARY KEY,
+  coach_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  titre            TEXT NOT NULL,
+  sport            TEXT NOT NULL,
+  type             TEXT NOT NULL,
+  duree_prevue_min INTEGER CHECK (duree_prevue_min BETWEEN 0 AND 1440),
+  description      TEXT NOT NULL DEFAULT '',
+  blocs            JSONB NOT NULL DEFAULT '[]'
+);
+
 -- Messagerie : une conversation par binôme coach / athlète.
 CREATE TABLE IF NOT EXISTS messages (
   id         SERIAL PRIMARY KEY,

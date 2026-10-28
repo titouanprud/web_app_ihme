@@ -127,6 +127,27 @@ router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   res.json(await trouverSeance(id));
 });
 
+// POST /api/seances/:id/dupliquer : le coach copie une de ses séances à une autre date,
+// pour le même athlète ou un autre de ses athlètes. La copie repart au statut "prevue".
+router.post('/:id/dupliquer', requireAuth, requireRole('coach'), async (req, res) => {
+  const id = valider.identifiant(req.params.id);
+  const date = valider.dateISO(req.body?.date, 'La date');
+  const athleteId = valider.identifiant(req.body?.athleteId, "L'athlète");
+  await verifierAthleteDuCoach(req.user.id, athleteId);
+
+  // INSERT … SELECT : copie directe en base ; "WHERE coach_id" protège les séances des autres coachs
+  const { rows } = await pool.query(
+    `INSERT INTO seances
+       (coach_id, athlete_id, date, titre, sport, type, duree_prevue_min, description, blocs)
+     SELECT coach_id, $1, $2, titre, sport, type, duree_prevue_min, description, blocs
+     FROM seances WHERE id = $3 AND coach_id = $4
+     RETURNING id`,
+    [athleteId, date, id, req.user.id],
+  );
+  if (!rows[0]) throw new HttpError(404, 'Séance introuvable.');
+  res.status(201).json(await trouverSeance(rows[0].id));
+});
+
 // DELETE /api/seances/:id : le coach supprime une de ses séances (et son retour)
 router.delete('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   const id = valider.identifiant(req.params.id);

@@ -1,35 +1,45 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { api } from '../api.js';
-import { debutSemaine } from '../dates.js';
+import { debutSemaine, formaterDate } from '../dates.js';
 import { useSeancesSemaine } from '../useSeancesSemaine.js';
+import DupliquerForm from '../components/DupliquerForm.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
+import NouvelleSeance from '../components/NouvelleSeance.jsx';
 import SeanceDetails from '../components/SeanceDetails.jsx';
 import SeanceForm from '../components/SeanceForm.jsx';
 import WeekCalendar, { WeekNav } from '../components/WeekCalendar.jsx';
 
-// Calendrier d'un athlète vu par son coach : création, modification, suppression, retours.
+// Calendrier d'un athlète vu par son coach : création, modification, duplication,
+// suppression, enregistrement comme modèle et lecture des retours.
 export default function CoachAthletePage() {
   const { athleteId } = useParams();
-  const [athlete, setAthlete] = useState(null);
+  const [athletes, setAthletes] = useState(null);
   const [erreurAthlete, setErreurAthlete] = useState('');
   const [lundi, setLundi] = useState(debutSemaine());
   const { seances, loading, error, recharger } = useSeancesSemaine(lundi, athleteId);
 
-  // Fenêtre ouverte : null, { mode: 'voir', seance }, { mode: 'modifier', seance } ou { mode: 'creer', date }
+  // Fenêtre ouverte : null ou { mode, seance?, date? }
+  // modes : 'creer', 'voir', 'modifier', 'dupliquer'
   const [fenetre, setFenetre] = useState(null);
-  const fermer = () => setFenetre(null);
+  const [message, setMessage] = useState('');
+  const fermer = () => {
+    setFenetre(null);
+    setMessage('');
+  };
+  const voir = (seance) => {
+    setFenetre({ mode: 'voir', seance });
+    setMessage('');
+  };
 
   useEffect(() => {
     api('athletes')
-      .then((liste) => {
-        const trouve = liste.find((a) => String(a.id) === athleteId);
-        if (trouve) setAthlete(trouve);
-        else setErreurAthlete('Cet athlète ne fait pas partie de votre groupe.');
-      })
+      .then(setAthletes)
       .catch((err) => setErreurAthlete(err.message));
-  }, [athleteId]);
+  }, []);
+
+  const athlete = athletes?.find((a) => String(a.id) === athleteId);
 
   async function creer(valeurs) {
     await api('seances', { method: 'POST', body: { ...valeurs, athleteId: Number(athleteId) } });
@@ -39,8 +49,28 @@ export default function CoachAthletePage() {
 
   async function modifier(valeurs) {
     const seance = await api(`seances/${fenetre.seance.id}`, { method: 'PUT', body: valeurs });
-    setFenetre({ mode: 'voir', seance });
+    voir(seance);
     recharger();
+  }
+
+  async function dupliquer(cible) {
+    const copie = await api(`seances/${fenetre.seance.id}/dupliquer`, {
+      method: 'POST',
+      body: cible,
+    });
+    recharger();
+    voir(fenetre.seance);
+    const pour = athletes.find((a) => a.id === copie.athleteId);
+    setMessage(`Copie créée le ${formaterDate(copie.date)} pour ${pour.prenom} ${pour.nom}.`);
+  }
+
+  async function enregistrerModele(seance) {
+    try {
+      await api('seances-types', { method: 'POST', body: seance });
+      setMessage('Séance ajoutée à votre bibliothèque.');
+    } catch (err) {
+      window.alert(err.message);
+    }
   }
 
   async function supprimer(seance) {
@@ -54,13 +84,15 @@ export default function CoachAthletePage() {
     }
   }
 
-  if (erreurAthlete) {
+  if (erreurAthlete || (athletes && !athlete)) {
     return (
       <div className="page">
         <Link to="/coach" className="retour-lien">
           ← Mes athlètes
         </Link>
-        <ErrorMessage message={erreurAthlete} />
+        <ErrorMessage
+          message={erreurAthlete || 'Cet athlète ne fait pas partie de votre groupe.'}
+        />
       </div>
     );
   }
@@ -95,25 +127,44 @@ export default function CoachAthletePage() {
         lundi={lundi}
         seances={seances}
         loading={loading}
-        onOuvrir={(seance) => setFenetre({ mode: 'voir', seance })}
+        onOuvrir={voir}
         onAjouter={(date) => setFenetre({ mode: 'creer', date })}
       />
 
       {fenetre?.mode === 'creer' && (
         <Modal titre="Nouvelle séance" onClose={fermer} large>
-          <SeanceForm initial={{ date: fenetre.date }} onSubmit={creer} onCancel={fermer} />
+          <NouvelleSeance date={fenetre.date} onSubmit={creer} onCancel={fermer} />
         </Modal>
       )}
       {fenetre?.mode === 'voir' && (
         <Modal titre={fenetre.seance.titre} onClose={fermer}>
           <SeanceDetails seance={fenetre.seance} />
-          <div className="form-actions">
+          {message && (
+            <p className="success" role="status">
+              {message}
+            </p>
+          )}
+          <div className="form-actions form-actions-multiples">
             <button
               type="button"
               className="btn btn-danger"
               onClick={() => supprimer(fenetre.seance)}
             >
               Supprimer
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => enregistrerModele(fenetre.seance)}
+            >
+              Enregistrer comme modèle
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setFenetre({ mode: 'dupliquer', seance: fenetre.seance })}
+            >
+              Dupliquer
             </button>
             <button
               type="button"
@@ -130,7 +181,17 @@ export default function CoachAthletePage() {
           <SeanceForm
             initial={fenetre.seance}
             onSubmit={modifier}
-            onCancel={() => setFenetre({ mode: 'voir', seance: fenetre.seance })}
+            onCancel={() => voir(fenetre.seance)}
+          />
+        </Modal>
+      )}
+      {fenetre?.mode === 'dupliquer' && (
+        <Modal titre="Dupliquer la séance" onClose={fermer}>
+          <DupliquerForm
+            seance={fenetre.seance}
+            athletes={athletes}
+            onSubmit={dupliquer}
+            onCancel={() => voir(fenetre.seance)}
           />
         </Modal>
       )}

@@ -4,6 +4,7 @@ import { Loading } from './components/Feedback.jsx';
 import Layout from './components/Layout.jsx';
 import RequireRole from './components/RequireRole.jsx';
 import AthletePage from './pages/AthletePage.jsx';
+import BibliothequePage from './pages/BibliothequePage.jsx';
 import CoachAthletePage from './pages/CoachAthletePage.jsx';
 import CoachDashboard from './pages/CoachDashboard.jsx';
 import LoginPage from './pages/LoginPage.jsx';
@@ -63,6 +64,14 @@ export default function App() {
           element={
             <RequireRole role="coach">
               <CoachMessagesPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/bibliotheque"
+          element={
+            <RequireRole role="coach">
+              <BibliothequePage />
             </RequireRole>
           }
         />

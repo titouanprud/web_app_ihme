@@ -8,6 +8,7 @@ import coachsRoutes from './routes/coachs.js';
 import demandesRoutes from './routes/demandes.js';
 import athletesRoutes from './routes/athletes.js';
 import seancesRoutes from './routes/seances.js';
+import seancesTypesRoutes from './routes/seancesTypes.js';
 import messagesRoutes from './routes/messages.js';
 import notificationsRoutes from './routes/notifications.js';
 import { apiNotFound, errorHandler } from './middlewares/errors.js';
@@ -28,6 +29,7 @@ export function createApp() {
   app.use('/api/demandes', demandesRoutes);
   app.use('/api/athletes', athletesRoutes);
   app.use('/api/seances', seancesRoutes);
+  app.use('/api/seances-types', seancesTypesRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api', apiNotFound);
