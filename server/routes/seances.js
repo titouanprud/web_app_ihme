@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
+import { verifierAthleteDuCoach } from '../liens.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
 import * as valider from '../validation.js';
 
@@ -25,15 +26,6 @@ const SELECT_SEANCE = `
 async function trouverSeance(id) {
   const { rows } = await pool.query(`${SELECT_SEANCE} WHERE s.id = $1`, [id]);
   return rows[0];
-}
-
-// Vérifie que l'athlète fait bien partie du groupe du coach connecté.
-async function verifierAthleteDuCoach(coachId, athleteId) {
-  const { rowCount } = await pool.query(
-    'SELECT 1 FROM coach_athletes WHERE coach_id = $1 AND athlete_id = $2',
-    [coachId, athleteId],
-  );
-  if (rowCount === 0) throw new HttpError(403, 'Cet athlète ne fait pas partie de votre groupe.');
 }
 
 // Lit et valide les champs d'une séance envoyés par le coach.

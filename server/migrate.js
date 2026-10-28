@@ -14,19 +14,17 @@ CREATE TABLE IF NOT EXISTS users (
   date_creation     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Lien coach / athlète. Une ligne = une demande de l'athlète, puis le lien une fois accepté.
+-- athlete_id est UNIQUE : un athlète n'a qu'un coach (ou une seule demande) à la fois.
 CREATE TABLE IF NOT EXISTS coach_athletes (
   id         SERIAL PRIMARY KEY,
   coach_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   athlete_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   date_ajout TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE TABLE IF NOT EXISTS invitations (
-  id              SERIAL PRIMARY KEY,
-  coach_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  code            TEXT NOT NULL UNIQUE,
-  date_expiration TIMESTAMPTZ NOT NULL
-);
+-- Colonne ajoutée avec les demandes : les liens déjà existants restent "acceptee".
+ALTER TABLE coach_athletes ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'acceptee'
+  CHECK (statut IN ('en_attente', 'acceptee', 'refusee'));
 
 CREATE TABLE IF NOT EXISTS seances (
   id               SERIAL PRIMARY KEY,
@@ -51,6 +49,18 @@ CREATE TABLE IF NOT EXISTS retours (
   commentaire      TEXT NOT NULL DEFAULT '',
   date             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Messagerie : une conversation par binôme coach / athlète.
+CREATE TABLE IF NOT EXISTS messages (
+  id         SERIAL PRIMARY KEY,
+  coach_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  athlete_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  auteur_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  contenu    TEXT NOT NULL,
+  date_envoi TIMESTAMPTZ NOT NULL DEFAULT now(),
+  lu         BOOLEAN NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages (coach_id, athlete_id, id);
 
 CREATE TABLE IF NOT EXISTS app_settings (
   cle    TEXT PRIMARY KEY,

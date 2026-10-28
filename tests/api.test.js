@@ -1,4 +1,4 @@
-// Tests de l'API : authentification et droits d'accès.
+// Tests de l'API : authentification, droits d'accès, demandes et messagerie.
 // Ils utilisent la base locale (docker compose up -d) et suppriment les
 // comptes fictifs qu'ils créent à la fin. Lancement : npm test
 import { after, before, describe, test } from 'node:test';
@@ -38,17 +38,26 @@ async function creerCompte(role) {
   return res.body;
 }
 
-// Crée un coach et un athlète reliés par une invitation
+// L'athlète envoie une demande au coach
+function demander(athlete, coach) {
+  return api('demandes', {
+    method: 'POST',
+    token: athlete.token,
+    body: { coachId: coach.user.id },
+  });
+}
+
+// Le coach accepte (ou refuse) la demande de l'athlète
+function repondre(coach, athlete, decision = 'accepter') {
+  return api(`demandes/${athlete.user.id}/${decision}`, { method: 'POST', token: coach.token });
+}
+
+// Crée un coach et un athlète reliés (demande envoyée puis acceptée)
 async function creerCoachEtAthlete() {
   const coach = await creerCompte('coach');
   const athlete = await creerCompte('athlete');
-  const invitation = await api('invitations', { method: 'POST', token: coach.token });
-  const accept = await api('invitations/accept', {
-    method: 'POST',
-    token: athlete.token,
-    body: { code: invitation.body.code },
-  });
-  assert.equal(accept.status, 201);
+  assert.equal((await demander(athlete, coach)).status, 201);
+  assert.equal((await repondre(coach, athlete)).status, 200);
   return { coach, athlete };
 }
 
@@ -233,16 +242,128 @@ describe('droits d’accès', () => {
     assert.equal(lecture.body[0].retour.ressenti, 7);
     assert.equal(lecture.body[0].retour.commentaire, 'Bonnes jambes');
   });
+});
 
-  test('un athlète ne peut rejoindre qu’un seul coach', async () => {
-    const { athlete } = await creerCoachEtAthlete();
+describe('demandes coach / athlète', () => {
+  test('une demande en attente ne donne encore aucun droit', async () => {
+    const coach = await creerCompte('coach');
+    const athlete = await creerCompte('athlete');
+    await demander(athlete, coach);
+
+    const me = await api('me', { token: athlete.token });
+    assert.equal(me.body.coach, null);
+    assert.equal(me.body.demande.statut, 'en_attente');
+
+    const seances = await api(
+      `seances?athleteId=${athlete.user.id}&from=2026-10-26&to=2026-11-01`,
+      {
+        token: coach.token,
+      },
+    );
+    assert.equal(seances.status, 403);
+    assert.equal((await api('messages', { token: athlete.token })).status, 403);
+  });
+
+  test('seul le coach destinataire peut accepter la demande', async () => {
+    const coach = await creerCompte('coach');
     const autreCoach = await creerCompte('coach');
-    const invitation = await api('invitations', { method: 'POST', token: autreCoach.token });
-    const res = await api('invitations/accept', {
+    const athlete = await creerCompte('athlete');
+    await demander(athlete, coach);
+
+    assert.equal((await repondre(autreCoach, athlete)).status, 404);
+    // Un athlète ne peut pas accepter une demande (route réservée aux coachs)
+    const parAthlete = await api(`demandes/${athlete.user.id}/accepter`, {
       method: 'POST',
       token: athlete.token,
-      body: { code: invitation.body.code },
     });
-    assert.equal(res.status, 409);
+    assert.equal(parAthlete.status, 403);
+
+    const demandes = await api('demandes', { token: coach.token });
+    assert.deepEqual(
+      demandes.body.map((d) => d.athleteId),
+      [athlete.user.id],
+    );
+    assert.equal((await repondre(coach, athlete)).status, 200);
+    const me = await api('me', { token: athlete.token });
+    assert.equal(me.body.coach.id, coach.user.id);
+  });
+
+  test('une seule demande à la fois, nouvelle demande possible après un refus', async () => {
+    const coachA = await creerCompte('coach');
+    const coachB = await creerCompte('coach');
+    const athlete = await creerCompte('athlete');
+
+    await demander(athlete, coachA);
+    assert.equal((await demander(athlete, coachB)).status, 409);
+
+    assert.equal((await repondre(coachA, athlete, 'refuser')).status, 200);
+    const me = await api('me', { token: athlete.token });
+    assert.equal(me.body.demande.statut, 'refusee');
+
+    assert.equal((await demander(athlete, coachB)).status, 201);
+  });
+
+  test('un athlète déjà relié ne peut pas demander un autre coach', async () => {
+    const { athlete } = await creerCoachEtAthlete();
+    const autreCoach = await creerCompte('coach');
+    assert.equal((await demander(athlete, autreCoach)).status, 409);
+  });
+
+  test('l’athlète peut annuler sa demande en attente', async () => {
+    const coach = await creerCompte('coach');
+    const athlete = await creerCompte('athlete');
+    await demander(athlete, coach);
+    assert.equal((await api('demandes', { method: 'DELETE', token: athlete.token })).status, 204);
+    const me = await api('me', { token: athlete.token });
+    assert.equal(me.body.demande, null);
+  });
+});
+
+describe('messagerie', () => {
+  test('coach et athlète échangent des messages, avec compteur de non lus', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+
+    const envoi = await api('messages', {
+      method: 'POST',
+      token: coach.token,
+      body: { athleteId: athlete.user.id, contenu: 'Bonjour, prêt pour la semaine ?' },
+    });
+    assert.equal(envoi.status, 201);
+
+    const notifs = await api('notifications', { token: athlete.token });
+    assert.equal(notifs.body.messagesNonLus, 1);
+
+    // Lire la conversation marque le message comme lu
+    const lecture = await api('messages', { token: athlete.token });
+    assert.equal(lecture.body.length, 1);
+    assert.equal(lecture.body[0].contenu, 'Bonjour, prêt pour la semaine ?');
+    assert.equal((await api('notifications', { token: athlete.token })).body.messagesNonLus, 0);
+
+    await api('messages', { method: 'POST', token: athlete.token, body: { contenu: 'Oui !' } });
+    const notifsCoach = await api('notifications', { token: coach.token });
+    assert.equal(notifsCoach.body.parAthlete[athlete.user.id], 1);
+  });
+
+  test('un coach ne peut pas lire ni écrire dans la conversation d’un autre binôme', async () => {
+    const { athlete } = await creerCoachEtAthlete();
+    const autreCoach = await creerCompte('coach');
+    const lecture = await api(`messages?athleteId=${athlete.user.id}`, { token: autreCoach.token });
+    assert.equal(lecture.status, 403);
+    const envoi = await api('messages', {
+      method: 'POST',
+      token: autreCoach.token,
+      body: { athleteId: athlete.user.id, contenu: 'Coucou' },
+    });
+    assert.equal(envoi.status, 403);
+  });
+
+  test('message vide refusé', async () => {
+    const { athlete } = await creerCoachEtAthlete();
+    const res = await api('messages', {
+      method: 'POST',
+      token: athlete.token,
+      body: { contenu: '   ' },
+    });
+    assert.equal(res.status, 400);
   });
 });
