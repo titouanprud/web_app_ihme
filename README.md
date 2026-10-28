@@ -29,9 +29,10 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 **Commun**
 - Inscription (choix du rôle coach ou athlète), connexion, déconnexion.
 - Pages protégées : on ne voit que ses propres données.
+- Messagerie entre un athlète et son coach, avec compteur de messages non lus.
 
 **Coach**
-- Inviter / ajouter un athlète à son groupe (via un code d'invitation que l'athlète saisit).
+- Accepter ou refuser les demandes des athlètes qui le choisissent comme coach.
 - Voir la liste de ses athlètes.
 - Créer une séance pour un athlète : date, titre, sport, type (endurance, fractionné, renfo, repos…), durée prévue, description.
 - Modifier et supprimer une séance.
@@ -39,7 +40,7 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Lire les retours des athlètes.
 
 **Athlète**
-- Rejoindre un coach avec le code d'invitation.
+- Choisir son coach parmi les comptes coach existants ; le lien est créé quand le coach accepte la demande.
 - Voir son calendrier (vue semaine) avec les séances prévues.
 - Ouvrir une séance pour voir le détail.
 - Marquer la séance comme réalisée ou non réalisée, avec un retour : ressenti (note de 1 à 10), durée réelle, commentaire.
@@ -103,8 +104,8 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 ## 6. Modèle de données (première version)
 
 - **users** : id, email, mot_de_passe_hash, prénom, nom, rôle (`coach` | `athlete`), date_création
-- **coach_athletes** : id, coach_id → users, athlete_id → users (unique : un athlète n'a qu'un coach), date_ajout
-- **invitations** : id, coach_id → users, code, date_expiration
+- **coach_athletes** : id, coach_id → users, athlete_id → users (unique : un athlète n'a qu'un coach), statut (`en_attente` | `acceptee` | `refusee`), date_ajout
+- **messages** : id, coach_id → users, athlete_id → users, auteur_id → users, contenu, date_envoi, lu
 - **seances** : id, coach_id, athlete_id, date, titre, sport, type, durée_prévue_min, description, statut (`prévue` | `réalisée` | `non_réalisée`)
 - **retours** : id, seance_id → seances, ressenti (1-10), durée_réelle_min, commentaire, date
 - **app_settings** : clé, valeur (sert à stocker le secret JWT généré au premier démarrage si la variable `JWT_SECRET` n'existe pas, car le serveur du cours ne fournit que `DATABASE_URL`)
@@ -117,8 +118,15 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | POST | `/api/auth/register` | tous | Créer un compte |
 | POST | `/api/auth/login` | tous | Se connecter, renvoie un jeton JWT |
 | GET | `/api/me` | connecté | Infos de l'utilisateur connecté |
-| POST | `/api/invitations` | coach | Générer un code d'invitation |
-| POST | `/api/invitations/accept` | athlète | Rejoindre un coach avec un code |
+| GET | `/api/coachs` | athlète | Liste des coachs (prénom, nom) |
+| POST | `/api/demandes` | athlète | Demander à rejoindre un coach |
+| DELETE | `/api/demandes` | athlète | Annuler sa demande en attente |
+| GET | `/api/demandes` | coach | Demandes en attente reçues |
+| POST | `/api/demandes/:athleteId/accepter` | coach | Accepter une demande |
+| POST | `/api/demandes/:athleteId/refuser` | coach | Refuser une demande |
+| GET | `/api/messages?athleteId=` | coach / athlète | Conversation du binôme (marque les messages reçus comme lus) |
+| POST | `/api/messages` | coach / athlète | Envoyer un message |
+| GET | `/api/notifications` | connecté | Compteurs : messages non lus, demandes en attente |
 | GET | `/api/athletes` | coach | Liste de ses athlètes |
 | GET | `/api/seances?athleteId=&from=&to=` | coach / athlète | Séances sur une période |
 | POST | `/api/seances` | coach | Créer une séance |
@@ -193,7 +201,7 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 
 1. Mise en place : structure du dépôt, fichiers de l'enseignant, PostgreSQL local, `/api/health`, page React minimale, **premier déploiement réussi**.
 2. Authentification : inscription, connexion, rôles.
-3. Lien coach/athlète : invitations.
+3. Lien coach/athlète : demande de l'athlète, validation par le coach ; messagerie.
 4. Séances : création, modification, calendrier semaine.
 5. Retours athlète.
 6. Finitions : design, données fictives de démonstration, tests, documentation, version 2 si le temps le permet.
