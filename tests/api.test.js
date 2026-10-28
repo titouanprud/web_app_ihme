@@ -438,6 +438,97 @@ describe('duplication et bibliothèque', () => {
   });
 });
 
+describe('profil sportif : records et seuils', () => {
+  const RECORDS = [
+    { distance: '5k', tempsSec: 20 * 60 + 30, date: '2026-05-10' },
+    { distance: '10k', tempsSec: 42 * 60 + 15 },
+    { distance: 'semi', tempsSec: 3600 + 35 * 60 },
+    { distance: 'marathon', tempsSec: 3 * 3600 + 30 * 60 },
+  ];
+
+  test('l’athlète saisit ses records, son coach les voit', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const res = await api('profil/records', {
+      method: 'PUT',
+      token: athlete.token,
+      body: { records: RECORDS },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.records.length, 4);
+
+    const vuParCoach = await api(`profil?athleteId=${athlete.user.id}`, { token: coach.token });
+    assert.equal(vuParCoach.status, 200);
+    const dixKm = vuParCoach.body.records.find((r) => r.distance === '10k');
+    assert.equal(dixKm.tempsSec, 42 * 60 + 15);
+
+    // Une nouvelle liste remplace la précédente
+    await api('profil/records', {
+      method: 'PUT',
+      token: athlete.token,
+      body: { records: [RECORDS[0]] },
+    });
+    assert.equal((await api('profil', { token: athlete.token })).body.records.length, 1);
+  });
+
+  test('records invalides refusés et réservés à l’athlète', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const envoyer = (token, records) =>
+      api('profil/records', { method: 'PUT', token, body: { records } });
+
+    // 5 km en 2 minutes : faute de frappe probable
+    assert.equal((await envoyer(athlete.token, [{ distance: '5k', tempsSec: 120 }])).status, 400);
+    assert.equal((await envoyer(athlete.token, [{ distance: '15k', tempsSec: 3600 }])).status, 400);
+    assert.equal((await envoyer(coach.token, RECORDS)).status, 403);
+  });
+
+  test('le coach estime SV1 / SV2, l’athlète les voit sans pouvoir les modifier', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const seuils = { sv1Allure: 5 * 60 + 10, sv1Fc: 150, sv2Allure: 4 * 60 + 20, sv2Fc: 172 };
+    const res = await api(`profil/seuils/${athlete.user.id}`, {
+      method: 'PUT',
+      token: coach.token,
+      body: seuils,
+    });
+    assert.equal(res.status, 200);
+
+    const vuParAthlete = await api('profil', { token: athlete.token });
+    assert.equal(vuParAthlete.body.seuils.sv1Allure, seuils.sv1Allure);
+    assert.equal(vuParAthlete.body.seuils.sv2Fc, seuils.sv2Fc);
+
+    const parAthlete = await api(`profil/seuils/${athlete.user.id}`, {
+      method: 'PUT',
+      token: athlete.token,
+      body: seuils,
+    });
+    assert.equal(parAthlete.status, 403);
+  });
+
+  test('seuils incohérents refusés, et seulement pour ses propres athlètes', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const autreCoach = await creerCompte('coach');
+    const chemin = `profil/seuils/${athlete.user.id}`;
+
+    // SV2 plus lente que SV1
+    const incoherent = await api(chemin, {
+      method: 'PUT',
+      token: coach.token,
+      body: { sv1Allure: 300, sv2Allure: 320 },
+    });
+    assert.equal(incoherent.status, 400);
+
+    const parAutre = await api(chemin, {
+      method: 'PUT',
+      token: autreCoach.token,
+      body: { sv1Allure: 300, sv2Allure: 260 },
+    });
+    assert.equal(parAutre.status, 403);
+    const lectureAutre = await api(`profil?athleteId=${athlete.user.id}`, {
+      token: autreCoach.token,
+    });
+    assert.equal(lectureAutre.status, 403);
+  });
+});
+
 describe('demandes coach / athlète', () => {
   test('une demande en attente ne donne encore aucun droit', async () => {
     const coach = await creerCompte('coach');

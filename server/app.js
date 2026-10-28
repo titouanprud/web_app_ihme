@@ -11,6 +11,7 @@ import seancesRoutes from './routes/seances.js';
 import seancesTypesRoutes from './routes/seancesTypes.js';
 import messagesRoutes from './routes/messages.js';
 import notificationsRoutes from './routes/notifications.js';
+import profilRoutes from './routes/profil.js';
 import { apiNotFound, errorHandler } from './middlewares/errors.js';
 
 // Construit l'application Express (séparée de index.js pour pouvoir la tester).
@@ -32,6 +33,7 @@ export function createApp() {
   app.use('/api/seances-types', seancesTypesRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/profil', profilRoutes);
   app.use('/api', apiNotFound);
 
   // --- React compilé (après `npm run build`) ---

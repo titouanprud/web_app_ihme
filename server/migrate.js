@@ -69,6 +69,25 @@ CREATE TABLE IF NOT EXISTS seances_types (
   blocs            JSONB NOT NULL DEFAULT '[]'
 );
 
+-- Records personnels de l'athlète (saisis par lui) : un temps par distance
+CREATE TABLE IF NOT EXISTS records (
+  athlete_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  distance    TEXT NOT NULL CHECK (distance IN ('5k', '10k', 'semi', 'marathon')),
+  temps_sec   INTEGER NOT NULL CHECK (temps_sec > 0),
+  date_record DATE,
+  PRIMARY KEY (athlete_id, distance)
+);
+
+-- Seuils ventilatoires SV1 / SV2 estimés par le coach (allure en s/km, FC en bpm)
+CREATE TABLE IF NOT EXISTS seuils (
+  athlete_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  sv1_allure_sec INTEGER CHECK (sv1_allure_sec BETWEEN 120 AND 1200),
+  sv1_fc         INTEGER CHECK (sv1_fc BETWEEN 60 AND 230),
+  sv2_allure_sec INTEGER CHECK (sv2_allure_sec BETWEEN 120 AND 1200),
+  sv2_fc         INTEGER CHECK (sv2_fc BETWEEN 60 AND 230),
+  date_maj       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Messagerie : une conversation par binôme coach / athlète.
 CREATE TABLE IF NOT EXISTS messages (
   id         SERIAL PRIMARY KEY,

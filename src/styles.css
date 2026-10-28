@@ -1064,6 +1064,85 @@ a.btn {
   padding-top: 0.75rem;
 }
 
+/* ===== Profil sportif ===== */
+.profil-grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.profil-grille p {
+  margin: 0;
+}
+.tableau {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.tableau th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--texte-discret);
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--bordure);
+}
+.tableau td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--bordure);
+}
+.ligne-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+}
+.form .ligne-record label {
+  flex: 1 1 120px;
+  font-size: 0.8rem;
+}
+.ligne-record-distance {
+  flex: 0 0 110px;
+  padding-bottom: 0.6rem;
+}
+.ligne-record-allure {
+  flex: 0 0 80px;
+  padding-bottom: 0.6rem;
+}
+.seuils {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.seuil {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: var(--fond);
+  font-size: 1.05rem;
+}
+.seuil-nom {
+  font-weight: 700;
+  color: var(--primaire-fonce);
+  min-width: 2.5rem;
+}
+.profil-coach summary {
+  cursor: pointer;
+}
+.profil-coach-contenu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+.profil-coach-contenu section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
 /* ===== Mobile ===== */
 @media (max-width: 760px) {
   h1 {
@@ -1084,6 +1163,15 @@ a.btn {
   }
   .form-ligne {
     grid-template-columns: 1fr;
+  }
+  /* Records et seuils : la distance (ou SV1/SV2) passe au-dessus de ses champs */
+  .ligne-record {
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--bordure);
+  }
+  .ligne-record-distance {
+    flex-basis: 100%;
+    padding-bottom: 0;
   }
   .header-inner {
     flex-wrap: wrap;

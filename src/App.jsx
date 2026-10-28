@@ -9,6 +9,7 @@ import CoachAthletePage from './pages/CoachAthletePage.jsx';
 import CoachDashboard from './pages/CoachDashboard.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import { AthleteMessagesPage, CoachMessagesPage } from './pages/MessagesPage.jsx';
+import ProfilPage from './pages/ProfilPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 
 // Page d'accueil : envoie vers l'espace coach, l'espace athlète ou la connexion.
@@ -72,6 +73,14 @@ export default function App() {
           element={
             <RequireRole role="coach">
               <BibliothequePage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/athlete/profil"
+          element={
+            <RequireRole role="athlete">
+              <ProfilPage />
             </RequireRole>
           }
         />

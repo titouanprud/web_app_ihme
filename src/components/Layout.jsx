@@ -40,6 +40,7 @@ export default function Layout() {
                       <Compteur nombre={notifs?.messagesNonLus} libelle="messages non lus" />
                     </NavLink>
                   )}
+                  <NavLink to="/athlete/profil">Profil</NavLink>
                 </>
               )}
             </nav>

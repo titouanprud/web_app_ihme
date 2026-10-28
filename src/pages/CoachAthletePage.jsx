@@ -7,6 +7,7 @@ import DupliquerForm from '../components/DupliquerForm.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
 import NouvelleSeance from '../components/NouvelleSeance.jsx';
+import { ProfilAthleteCoach } from '../components/ProfilSportif.jsx';
 import SeanceDetails from '../components/SeanceDetails.jsx';
 import SeanceForm from '../components/SeanceForm.jsx';
 import WeekCalendar, { WeekNav } from '../components/WeekCalendar.jsx';
@@ -121,6 +122,7 @@ export default function CoachAthletePage() {
         </div>
       </div>
 
+      <ProfilAthleteCoach athleteId={athleteId} />
       <WeekNav lundi={lundi} onChange={setLundi} />
       <ErrorMessage message={error} />
       <WeekCalendar
