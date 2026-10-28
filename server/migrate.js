@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS retours (
   date             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Retour de l'athlète : difficulté de la séance et forme ressentie (1 à 10).
+-- Les anciennes colonnes ressenti et duree_reelle_min sont conservées mais plus utilisées.
+ALTER TABLE retours ADD COLUMN IF NOT EXISTS difficulte INTEGER CHECK (difficulte BETWEEN 1 AND 10);
+ALTER TABLE retours ADD COLUMN IF NOT EXISTS forme INTEGER CHECK (forme BETWEEN 1 AND 10);
+
 -- Bibliothèque de séances types (modèles sans date) de chaque coach
 CREATE TABLE IF NOT EXISTS seances_types (
   id               SERIAL PRIMARY KEY,

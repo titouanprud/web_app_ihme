@@ -38,12 +38,12 @@ export default function SeanceDetails({ seance }) {
           <h3>Retour de l’athlète</h3>
           <dl className="details-liste">
             <div>
-              <dt>Ressenti</dt>
-              <dd>{retour.ressenti ? `${retour.ressenti} / 10` : '—'}</dd>
+              <dt>Difficulté</dt>
+              <dd>{retour.difficulte ? `${retour.difficulte} / 10` : '—'}</dd>
             </div>
             <div>
-              <dt>Durée réelle</dt>
-              <dd>{formaterDuree(retour.dureeReelleMin) ?? '—'}</dd>
+              <dt>Forme</dt>
+              <dd>{retour.forme ? `${retour.forme} / 10` : '—'}</dd>
             </div>
           </dl>
           {retour.commentaire && <p className="retour-commentaire">« {retour.commentaire} »</p>}

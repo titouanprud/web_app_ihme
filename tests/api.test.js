@@ -213,7 +213,7 @@ describe('droits d’accès', () => {
     const retour = await api(`seances/${seanceDeA.body.id}/retour`, {
       method: 'POST',
       token: b.athlete.token,
-      body: { statut: 'realisee', ressenti: 5 },
+      body: { statut: 'realisee', difficulte: 5, forme: 5 },
     });
     assert.equal(retour.status, 404);
   });
@@ -229,7 +229,7 @@ describe('droits d’accès', () => {
     const retour = await api(`seances/${seance.body.id}/retour`, {
       method: 'POST',
       token: athlete.token,
-      body: { statut: 'realisee', ressenti: 7, dureeReelleMin: 50, commentaire: 'Bonnes jambes' },
+      body: { statut: 'realisee', difficulte: 7, forme: 8, commentaire: 'Bonnes jambes' },
     });
     assert.equal(retour.status, 200);
 
@@ -239,8 +239,27 @@ describe('droits d’accès', () => {
     );
     assert.equal(lecture.body.length, 1);
     assert.equal(lecture.body[0].statut, 'realisee');
-    assert.equal(lecture.body[0].retour.ressenti, 7);
+    assert.equal(lecture.body[0].retour.difficulte, 7);
+    assert.equal(lecture.body[0].retour.forme, 8);
     assert.equal(lecture.body[0].retour.commentaire, 'Bonnes jambes');
+  });
+
+  test('retour : difficulté et forme obligatoires si la séance est réalisée', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const seance = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: athlete.user.id },
+    });
+    const chemin = `seances/${seance.body.id}/retour`;
+    const envoyer = (body) => api(chemin, { method: 'POST', token: athlete.token, body });
+
+    assert.equal((await envoyer({ statut: 'realisee', difficulte: 6 })).status, 400);
+    assert.equal((await envoyer({ statut: 'realisee', difficulte: 11, forme: 5 })).status, 400);
+    // Séance non réalisée : un simple commentaire suffit
+    const nonFaite = await envoyer({ statut: 'non_realisee', commentaire: 'Malade' });
+    assert.equal(nonFaite.status, 200);
+    assert.equal(nonFaite.body.retour.difficulte, null);
   });
 });
 

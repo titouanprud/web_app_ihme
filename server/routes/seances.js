@@ -16,8 +16,8 @@ const SELECT_SEANCE = `
          s.duree_prevue_min AS "dureePrevueMin", s.description, s.blocs, s.statut,
          CASE WHEN r.id IS NULL THEN NULL
               ELSE json_build_object(
-                'ressenti', r.ressenti,
-                'dureeReelleMin', r.duree_reelle_min,
+                'difficulte', r.difficulte,
+                'forme', r.forme,
                 'commentaire', r.commentaire,
                 'date', r.date)
          END AS retour
@@ -159,22 +159,21 @@ router.delete('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   res.status(204).end();
 });
 
-// POST /api/seances/:id/retour : l'athlète indique si la séance est faite et donne son retour.
+// POST /api/seances/:id/retour : l'athlète indique si la séance est faite et donne son retour
+// (difficulté de la séance et forme ressentie de 1 à 10, commentaire).
 // Un nouvel envoi remplace le retour précédent.
 router.post('/:id/retour', requireAuth, requireRole('athlete'), async (req, res) => {
   const id = valider.identifiant(req.params.id);
   const body = req.body ?? {};
   const statut = valider.choix(body.statut, 'Le statut', ['realisee', 'non_realisee']);
-  const ressenti = valider.entier(body.ressenti, 'Le ressenti', {
+  // Les notes sont obligatoires pour une séance réalisée, facultatives sinon
+  const optionnel = statut === 'non_realisee';
+  const difficulte = valider.entier(body.difficulte, 'La difficulté', {
     min: 1,
     max: 10,
-    optionnel: statut === 'non_realisee',
+    optionnel,
   });
-  const dureeReelleMin = valider.entier(body.dureeReelleMin, 'La durée réelle', {
-    min: 0,
-    max: 1440,
-    optionnel: true,
-  });
+  const forme = valider.entier(body.forme, 'La forme', { min: 1, max: 10, optionnel });
   const commentaire = valider.texte(body.commentaire, 'Le commentaire', {
     max: 2000,
     optionnel: true,
@@ -190,12 +189,12 @@ router.post('/:id/retour', requireAuth, requireRole('athlete'), async (req, res)
     );
     if (rowCount === 0) throw new HttpError(404, 'Séance introuvable.');
     await client.query(
-      `INSERT INTO retours (seance_id, ressenti, duree_reelle_min, commentaire)
+      `INSERT INTO retours (seance_id, difficulte, forme, commentaire)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (seance_id) DO UPDATE
-       SET ressenti = EXCLUDED.ressenti, duree_reelle_min = EXCLUDED.duree_reelle_min,
+       SET difficulte = EXCLUDED.difficulte, forme = EXCLUDED.forme,
            commentaire = EXCLUDED.commentaire, date = now()`,
-      [id, ressenti, dureeReelleMin, commentaire],
+      [id, difficulte, forme, commentaire],
     );
     await client.query('COMMIT');
   } catch (err) {

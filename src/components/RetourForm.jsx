@@ -1,13 +1,27 @@
 import { useState } from 'react';
 import { ErrorMessage } from './Feedback.jsx';
 
-// Formulaire de l'athlète : séance réalisée ou non, ressenti, durée réelle, commentaire.
+// Curseur de 1 à 10 avec la valeur affichée et des repères aux extrémités
+function Note({ libelle, name, valeur, onChange, mini, maxi }) {
+  return (
+    <label>
+      {libelle} : <strong>{valeur} / 10</strong>
+      <input type="range" name={name} min={1} max={10} value={valeur} onChange={onChange} />
+      <span className="note-reperes texte-discret">
+        <span>{mini}</span>
+        <span>{maxi}</span>
+      </span>
+    </label>
+  );
+}
+
+// Formulaire de l'athlète : séance réalisée ou non, difficulté, forme et commentaire.
 export default function RetourForm({ seance, onSubmit }) {
   const precedent = seance.retour;
   const [valeurs, setValeurs] = useState({
     statut: seance.statut === 'non_realisee' ? 'non_realisee' : 'realisee',
-    ressenti: precedent?.ressenti ?? 5,
-    dureeReelleMin: precedent?.dureeReelleMin ?? seance.dureePrevueMin ?? '',
+    difficulte: precedent?.difficulte ?? 5,
+    forme: precedent?.forme ?? 5,
     commentaire: precedent?.commentaire ?? '',
   });
   const [envoi, setEnvoi] = useState(false);
@@ -25,9 +39,8 @@ export default function RetourForm({ seance, onSubmit }) {
     try {
       await onSubmit({
         statut: valeurs.statut,
-        ressenti: realisee ? Number(valeurs.ressenti) : null,
-        dureeReelleMin:
-          realisee && valeurs.dureeReelleMin !== '' ? Number(valeurs.dureeReelleMin) : null,
+        difficulte: realisee ? Number(valeurs.difficulte) : null,
+        forme: realisee ? Number(valeurs.forme) : null,
         commentaire: valeurs.commentaire,
       });
       setSucces('Retour enregistré, merci !');
@@ -74,28 +87,22 @@ export default function RetourForm({ seance, onSubmit }) {
 
       {realisee && (
         <div className="form-ligne">
-          <label>
-            Ressenti : <strong>{valeurs.ressenti} / 10</strong>
-            <input
-              type="range"
-              name="ressenti"
-              min={1}
-              max={10}
-              value={valeurs.ressenti}
-              onChange={changer}
-            />
-          </label>
-          <label>
-            Durée réelle (min)
-            <input
-              type="number"
-              name="dureeReelleMin"
-              min={0}
-              max={1440}
-              value={valeurs.dureeReelleMin}
-              onChange={changer}
-            />
-          </label>
+          <Note
+            libelle="Difficulté de la séance"
+            name="difficulte"
+            valeur={valeurs.difficulte}
+            onChange={changer}
+            mini="Très facile"
+            maxi="Maximale"
+          />
+          <Note
+            libelle="Ma forme"
+            name="forme"
+            valeur={valeurs.forme}
+            onChange={changer}
+            mini="Épuisé"
+            maxi="Excellente"
+          />
         </div>
       )}
 
