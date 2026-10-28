@@ -34,21 +34,25 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 **Coach**
 - Accepter ou refuser les demandes des athlètes qui le choisissent comme coach.
 - Voir la liste de ses athlètes.
-- Créer une séance pour un athlète : date, titre, sport, type (endurance, fractionné, renfo, repos…), durée prévue, description.
-- Modifier et supprimer une séance.
+- Créer une séance pour un athlète : date, titre, sport, type (endurance, fractionné, renfo, repos…), consignes.
+- Construire la séance en **blocs** : échauffement, intervalle, récupération, retour au calme, et répétitions (ex. 6 × (1000 m + 2 min)). Chaque bloc se mesure en durée ou en distance, avec une cible : allure ou zone 1 à 5 en course à pied, puissance ou zone à vélo. Les blocs se réordonnent (↑ ↓), se dupliquent et se suppriment ; durée et distance totales sont calculées.
+- Modifier, supprimer et **dupliquer** une séance (autre date, autre athlète).
+- **Bibliothèque** de séances types réutilisables pour créer une séance en un clic.
 - Voir le calendrier (vue semaine) d'un athlète avec le statut de chaque séance.
 - Lire les retours des athlètes.
+- Consulter les records de ses athlètes et saisir son estimation de leurs seuils **SV1 / SV2** (allure et FC).
 
 **Athlète**
 - Choisir son coach parmi les comptes coach existants ; le lien est créé quand le coach accepte la demande.
 - Voir son calendrier (vue semaine) avec les séances prévues.
 - Ouvrir une séance pour voir le détail.
-- Marquer la séance comme réalisée ou non réalisée, avec un retour : ressenti (note de 1 à 10), durée réelle, commentaire.
+- Marquer la séance comme réalisée ou non réalisée, avec un retour : difficulté de la séance (1 à 10), forme ressentie (1 à 10), commentaire.
+- Renseigner ses records sur 5 km, 10 km, semi-marathon et marathon.
+- Voir ses allures SV1 / SV2 estimées par son coach (sans pouvoir les modifier).
 
 ### Version 2 (si le temps le permet)
 - Vue mois du calendrier.
-- Dupliquer une séance ou une semaine complète.
-- Bibliothèque de séances types réutilisables par le coach.
+- Dupliquer une semaine complète.
 - Statistiques simples (volume d'entraînement par semaine, taux de séances réalisées).
 - Commentaires échangés sur une séance (mini-discussion coach/athlète).
 - Déploiement en ligne.
@@ -106,8 +110,11 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 - **users** : id, email, mot_de_passe_hash, prénom, nom, rôle (`coach` | `athlete`), date_création
 - **coach_athletes** : id, coach_id → users, athlete_id → users (unique : un athlète n'a qu'un coach), statut (`en_attente` | `acceptee` | `refusee`), date_ajout
 - **messages** : id, coach_id → users, athlete_id → users, auteur_id → users, contenu, date_envoi, lu
-- **seances** : id, coach_id, athlete_id, date, titre, sport, type, durée_prévue_min, description, statut (`prévue` | `réalisée` | `non_réalisée`)
-- **retours** : id, seance_id → seances, ressenti (1-10), durée_réelle_min, commentaire, date
+- **seances** : id, coach_id, athlete_id, date, titre, sport (`course` | `velo` | `renfo` | `autre`), type, durée_prévue_min, description, blocs (JSONB : liste des blocs, voir `server/blocs.js`), statut (`prévue` | `réalisée` | `non_réalisée`)
+- **seances_types** : id, coach_id → users, titre, sport, type, durée_prévue_min, description, blocs (modèles sans date de la bibliothèque)
+- **retours** : id, seance_id → seances, difficulte (1-10), forme (1-10), commentaire, date (les anciennes colonnes ressenti et durée_réelle_min sont conservées mais plus utilisées)
+- **records** : athlete_id → users, distance (`5k` | `10k` | `semi` | `marathon`), temps_sec, date_record
+- **seuils** : athlete_id → users, sv1_allure_sec, sv1_fc, sv2_allure_sec, sv2_fc, date_maj
 - **app_settings** : clé, valeur (sert à stocker le secret JWT généré au premier démarrage si la variable `JWT_SECRET` n'existe pas, car le serveur du cours ne fournit que `DATABASE_URL`)
 
 ## 7. API (première version)
@@ -132,7 +139,15 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | POST | `/api/seances` | coach | Créer une séance |
 | PUT | `/api/seances/:id` | coach | Modifier une séance |
 | DELETE | `/api/seances/:id` | coach | Supprimer une séance |
+| POST | `/api/seances/:id/dupliquer` | coach | Copier une séance (autre date, autre athlète) |
 | POST | `/api/seances/:id/retour` | athlète | Envoyer son retour |
+| GET | `/api/seances-types` | coach | Modèles de sa bibliothèque |
+| POST | `/api/seances-types` | coach | Ajouter un modèle |
+| PUT | `/api/seances-types/:id` | coach | Modifier un modèle |
+| DELETE | `/api/seances-types/:id` | coach | Supprimer un modèle |
+| GET | `/api/profil?athleteId=` | coach / athlète | Records et seuils d'un athlète |
+| PUT | `/api/profil/records` | athlète | Enregistrer ses records |
+| PUT | `/api/profil/seuils/:athleteId` | coach | Enregistrer son estimation de SV1 / SV2 |
 
 ## 8. Structure du dépôt
 
@@ -208,7 +223,7 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 
 ## 12. Décisions prises
 - Un athlète a **un seul coach** ; un coach peut avoir plusieurs athlètes.
-- L'application gère **tous les sports** (le sport est un champ libre de la séance).
+- Le sport de la séance est choisi dans une liste (course à pied, vélo, renforcement, autre) : il détermine les cibles possibles des blocs (allure ou zone en course, puissance ou zone à vélo).
 
 ## 13. Questions ouvertes
 - Date de rendu à confirmer.
