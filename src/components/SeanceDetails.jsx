@@ -1,5 +1,7 @@
+import { libelleSport } from '../blocs.js';
 import { formaterDate } from '../dates.js';
 import { formaterDuree, libelleType } from '../libelles.js';
+import BlocsAffichage from './BlocsAffichage.jsx';
 import { StatusBadge } from './WeekCalendar.jsx';
 
 // Détail d'une séance et du retour de l'athlète (lecture seule).
@@ -11,7 +13,7 @@ export default function SeanceDetails({ seance }) {
       <dl className="details-liste">
         <div>
           <dt>Sport</dt>
-          <dd>{seance.sport}</dd>
+          <dd>{libelleSport(seance.sport)}</dd>
         </div>
         <div>
           <dt>Type</dt>
@@ -28,6 +30,7 @@ export default function SeanceDetails({ seance }) {
           </dd>
         </div>
       </dl>
+      <BlocsAffichage blocs={seance.blocs} />
       {seance.description && <p className="details-description">{seance.description}</p>}
 
       {retour && (

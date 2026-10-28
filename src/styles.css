@@ -823,6 +823,170 @@ a.btn {
   padding-top: 1rem;
 }
 
+/* ===== Blocs de séance ===== */
+.modal-large {
+  max-width: 860px;
+}
+.form-ligne-3 {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.structure {
+  border: 1px solid var(--bordure);
+  border-radius: var(--rayon);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.structure legend {
+  padding: 0 0.35rem;
+  font-weight: 600;
+}
+.structure-total {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.blocs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.blocs-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.bloc {
+  border: 1px solid var(--bordure);
+  border-left: 4px solid var(--couleur-bloc, var(--primaire));
+  border-radius: 8px;
+  padding: 0.6rem;
+  background: var(--surface);
+}
+.bloc-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+.bloc-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+.bloc-actions button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--bordure);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.bloc-actions button:hover:not(:disabled) {
+  background: var(--fond);
+}
+.bloc-actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.form .bloc-champs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+}
+.form .bloc-champs label {
+  flex: 1 1 130px;
+  font-size: 0.8rem;
+}
+.form .bloc-champs label.champ-court {
+  flex: 0 1 95px;
+}
+.form .bloc-champs label.champ-large {
+  flex: 1 1 100%;
+}
+.form .bloc-champs input:not([type='radio']),
+.form .bloc-champs select {
+  font-size: 0.9rem;
+  padding: 0.4rem 0.5rem;
+}
+.bloc-champs > .blocs {
+  flex: 1 1 100%;
+  padding-left: 0.75rem;
+}
+.blocs-ajout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.btn-petit {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+/* Couleur de chaque type de bloc */
+.bloc-echauffement {
+  --couleur-bloc: #16a34a;
+}
+.bloc-intervalle {
+  --couleur-bloc: #dc2626;
+}
+.bloc-recuperation {
+  --couleur-bloc: #0ea5e9;
+}
+.bloc-retour_calme {
+  --couleur-bloc: #64748b;
+}
+.bloc-repetition {
+  --couleur-bloc: #7c3aed;
+  background: #faf8ff;
+}
+
+/* Lecture seule */
+.blocs-affichage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.blocs-affichage-entete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.blocs-lecture {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.bloc-lecture {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  padding: 0.4rem 0.6rem;
+  border-left: 4px solid var(--couleur-bloc);
+  border-radius: 6px;
+  background: var(--fond);
+  font-size: 0.9rem;
+}
+.bloc-lecture-type {
+  min-width: 110px;
+  color: var(--texte-discret);
+}
+.bloc-lecture.bloc-repetition {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 /* ===== Mobile ===== */
 @media (max-width: 760px) {
   h1 {

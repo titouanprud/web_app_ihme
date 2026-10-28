@@ -64,7 +64,7 @@ async function creerCoachEtAthlete() {
 const SEANCE = {
   date: '2026-10-28',
   titre: 'Footing',
-  sport: 'Course à pied',
+  sport: 'course',
   type: 'endurance',
   dureePrevueMin: 45,
 };
@@ -241,6 +241,100 @@ describe('droits d’accès', () => {
     assert.equal(lecture.body[0].statut, 'realisee');
     assert.equal(lecture.body[0].retour.ressenti, 7);
     assert.equal(lecture.body[0].retour.commentaire, 'Bonnes jambes');
+  });
+});
+
+describe('blocs de séance', () => {
+  // 15 min d'échauffement, 6 × (1000 m à 3:40-3:45 /km + 2 min de récup), 10 min au calme
+  const BLOCS = [
+    { type: 'echauffement', mesure: 'duree', valeur: 900, cible: { type: 'zone', min: 1 } },
+    {
+      type: 'repetition',
+      repetitions: 6,
+      blocs: [
+        {
+          type: 'intervalle',
+          mesure: 'distance',
+          valeur: 1000,
+          cible: { type: 'allure', min: 220, max: 225 },
+          note: 'sur piste',
+        },
+        { type: 'recuperation', mesure: 'duree', valeur: 120, cible: { type: 'aucune' } },
+      ],
+    },
+    { type: 'retour_calme', mesure: 'duree', valeur: 600 },
+  ];
+
+  test('une séance structurée en blocs est enregistrée puis relue à l’identique', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const res = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: athlete.user.id, blocs: BLOCS },
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.blocs.length, 3);
+    assert.equal(res.body.blocs[1].repetitions, 6);
+    assert.deepEqual(res.body.blocs[1].blocs[0].cible, { type: 'allure', min: 220, max: 225 });
+    // Les valeurs par défaut sont complétées par le serveur
+    assert.deepEqual(res.body.blocs[2].cible, { type: 'aucune' });
+
+    // Modification : on inverse les deux premiers blocs
+    const inverses = [BLOCS[1], BLOCS[0], BLOCS[2]];
+    const modif = await api(`seances/${res.body.id}`, {
+      method: 'PUT',
+      token: coach.token,
+      body: { ...SEANCE, blocs: inverses },
+    });
+    assert.equal(modif.status, 200);
+    assert.equal(modif.body.blocs[0].type, 'repetition');
+  });
+
+  test('blocs invalides refusés avec un message qui indique le bloc', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const essai = (blocs, sport = 'course') =>
+      api('seances', {
+        method: 'POST',
+        token: coach.token,
+        body: { ...SEANCE, sport, athleteId: athlete.user.id, blocs },
+      });
+
+    // Puissance impossible en course à pied
+    const puissance = await essai([
+      { type: 'intervalle', mesure: 'duree', valeur: 300, cible: { type: 'puissance', min: 250 } },
+    ]);
+    assert.equal(puissance.status, 400);
+    assert.match(puissance.body.error, /^Bloc 1 :/);
+
+    // Allure impossible à vélo
+    const allureVelo = await essai(
+      [{ type: 'intervalle', mesure: 'duree', valeur: 300, cible: { type: 'allure', min: 240 } }],
+      'velo',
+    );
+    assert.equal(allureVelo.status, 400);
+
+    // Zone hors de 1 à 5, dans un sous-bloc
+    const zone = await essai([
+      {
+        type: 'repetition',
+        repetitions: 3,
+        blocs: [
+          { type: 'intervalle', mesure: 'duree', valeur: 60, cible: { type: 'zone', min: 6 } },
+        ],
+      },
+    ]);
+    assert.equal(zone.status, 400);
+    assert.match(zone.body.error, /^Bloc 1\.1 :/);
+
+    // Pas de répétition dans une répétition
+    const imbrique = await essai([
+      {
+        type: 'repetition',
+        repetitions: 2,
+        blocs: [{ type: 'repetition', repetitions: 2, blocs: [] }],
+      },
+    ]);
+    assert.equal(imbrique.status, 400);
   });
 });
 

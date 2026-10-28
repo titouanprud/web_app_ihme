@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS seances (
                    CHECK (statut IN ('prevue', 'realisee', 'non_realisee'))
 );
 CREATE INDEX IF NOT EXISTS seances_athlete_date_idx ON seances (athlete_id, date);
+-- Structure de la séance en blocs (échauffement, intervalles…), voir server/blocs.js
+ALTER TABLE seances ADD COLUMN IF NOT EXISTS blocs JSONB NOT NULL DEFAULT '[]';
 
 CREATE TABLE IF NOT EXISTS retours (
   id               SERIAL PRIMARY KEY,

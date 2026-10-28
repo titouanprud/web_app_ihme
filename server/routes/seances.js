@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { SPORTS, validerBlocs } from '../blocs.js';
 import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
 import { verifierAthleteDuCoach } from '../liens.js';
@@ -12,7 +13,7 @@ export const TYPES_SEANCE = ['endurance', 'fractionne', 'renfo', 'competition', 
 // Colonnes renvoyées pour une séance, avec son retour éventuel regroupé dans un objet.
 const SELECT_SEANCE = `
   SELECT s.id, s.athlete_id AS "athleteId", s.date, s.titre, s.sport, s.type,
-         s.duree_prevue_min AS "dureePrevueMin", s.description, s.statut,
+         s.duree_prevue_min AS "dureePrevueMin", s.description, s.blocs, s.statut,
          CASE WHEN r.id IS NULL THEN NULL
               ELSE json_build_object(
                 'ressenti', r.ressenti,
@@ -28,13 +29,20 @@ async function trouverSeance(id) {
   return rows[0];
 }
 
-// Lit et valide les champs d'une séance envoyés par le coach.
+// Lit et valide les champs d'une séance envoyés par le coach (date comprise).
 function lireSeance(body = {}) {
+  return { date: valider.dateISO(body.date, 'La date'), ...lireContenuSeance(body) };
+}
+
+// Contenu d'une séance sans la date (réutilisé pour la bibliothèque de séances types).
+// Les blocs sont convertis en texte JSON pour la colonne JSONB.
+export function lireContenuSeance(body = {}) {
+  const sport = valider.choix(body.sport, 'Le sport', SPORTS);
   return {
-    date: valider.dateISO(body.date, 'La date'),
     titre: valider.texte(body.titre, 'Le titre', { max: 100 }),
-    sport: valider.texte(body.sport, 'Le sport', { max: 50 }),
+    sport,
     type: valider.choix(body.type, 'Le type', TYPES_SEANCE),
+    blocs: JSON.stringify(validerBlocs(body.blocs, sport)),
     dureePrevueMin: valider.entier(body.dureePrevueMin, 'La durée prévue', {
       min: 0,
       max: 1440,
@@ -83,10 +91,21 @@ router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
   await verifierAthleteDuCoach(req.user.id, athleteId);
 
   const { rows } = await pool.query(
-    `INSERT INTO seances (coach_id, athlete_id, date, titre, sport, type, duree_prevue_min, description)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO seances
+       (coach_id, athlete_id, date, titre, sport, type, duree_prevue_min, description, blocs)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id`,
-    [req.user.id, athleteId, s.date, s.titre, s.sport, s.type, s.dureePrevueMin, s.description],
+    [
+      req.user.id,
+      athleteId,
+      s.date,
+      s.titre,
+      s.sport,
+      s.type,
+      s.dureePrevueMin,
+      s.description,
+      s.blocs,
+    ],
   );
   res.status(201).json(await trouverSeance(rows[0].id));
 });
@@ -96,12 +115,13 @@ router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   const id = valider.identifiant(req.params.id);
   const s = lireSeance(req.body);
 
-  // La condition coach_id = $8 garantit qu'un coach ne modifie que ses propres séances.
+  // La condition coach_id = $9 garantit qu'un coach ne modifie que ses propres séances.
   const { rowCount } = await pool.query(
     `UPDATE seances
-     SET date = $1, titre = $2, sport = $3, type = $4, duree_prevue_min = $5, description = $6
-     WHERE id = $7 AND coach_id = $8`,
-    [s.date, s.titre, s.sport, s.type, s.dureePrevueMin, s.description, id, req.user.id],
+     SET date = $1, titre = $2, sport = $3, type = $4, duree_prevue_min = $5,
+         description = $6, blocs = $7
+     WHERE id = $8 AND coach_id = $9`,
+    [s.date, s.titre, s.sport, s.type, s.dureePrevueMin, s.description, s.blocs, id, req.user.id],
   );
   if (rowCount === 0) throw new HttpError(404, 'Séance introuvable.');
   res.json(await trouverSeance(id));

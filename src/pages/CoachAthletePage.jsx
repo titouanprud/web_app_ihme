@@ -100,7 +100,7 @@ export default function CoachAthletePage() {
       />
 
       {fenetre?.mode === 'creer' && (
-        <Modal titre="Nouvelle séance" onClose={fermer}>
+        <Modal titre="Nouvelle séance" onClose={fermer} large>
           <SeanceForm initial={{ date: fenetre.date }} onSubmit={creer} onCancel={fermer} />
         </Modal>
       )}
@@ -126,7 +126,7 @@ export default function CoachAthletePage() {
         </Modal>
       )}
       {fenetre?.mode === 'modifier' && (
-        <Modal titre="Modifier la séance" onClose={fermer}>
+        <Modal titre="Modifier la séance" onClose={fermer} large>
           <SeanceForm
             initial={fenetre.seance}
             onSubmit={modifier}

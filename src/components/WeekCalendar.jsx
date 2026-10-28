@@ -1,3 +1,4 @@
+import { libelleSport } from '../blocs.js';
 import { ajouterJours, debutSemaine, formaterDate, toISODate } from '../dates.js';
 import { formaterDuree, libelleType, STATUTS } from '../libelles.js';
 
@@ -78,7 +79,7 @@ export default function WeekCalendar({ lundi, seances, loading, onOuvrir, onAjou
                 >
                   <span className="carte-titre">{s.titre}</span>
                   <span className="carte-infos">
-                    {s.sport} · {libelleType(s.type)}
+                    {libelleSport(s.sport)} · {libelleType(s.type)}
                     {s.dureePrevueMin !== null && ` · ${formaterDuree(s.dureePrevueMin)}`}
                   </span>
                   <StatusBadge statut={s.statut} />
