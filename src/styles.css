@@ -384,31 +384,36 @@ legend {
   outline: 2px solid var(--primaire);
 }
 
-/* ===== Coach : invitation et athlètes ===== */
-.invitation {
+/* ===== Coach : demandes et athlètes ===== */
+.demandes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-color: var(--primaire);
+}
+.demandes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.demande {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--bordure);
 }
-.invitation p {
-  margin: 0.25rem 0 0;
-}
-.invitation-code {
+.demande-actions,
+.page-actions,
+.carte-athlete-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-.invitation-code code {
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  background: var(--primaire-clair);
-  color: var(--primaire-fonce);
-  padding: 0.3rem 0.8rem;
-  border-radius: 8px;
-  user-select: all;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 .liste-athletes {
   list-style: none;
@@ -420,21 +425,30 @@ legend {
 }
 .carte-athlete {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.85rem;
   padding: 1rem;
-  color: var(--texte);
-  text-decoration: none;
-  transition: border-color 0.15s;
 }
-.carte-athlete:hover {
-  border-color: var(--primaire);
-}
-.carte-athlete > span:nth-child(2) {
+.carte-athlete-nom {
   display: flex;
   flex-direction: column;
   min-width: 0;
   flex: 1;
+}
+.carte-athlete-actions {
+  width: 100%;
+}
+.carte-athlete-actions .btn {
+  flex: 1;
+  text-align: center;
+}
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  text-decoration: none;
 }
 .carte-athlete .texte-discret {
   overflow: hidden;
@@ -452,27 +466,130 @@ legend {
   font-weight: 700;
   text-transform: uppercase;
 }
-.fleche {
-  color: var(--texte-discret);
+.compteur {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  margin-left: 0.35rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
-/* ===== Athlète : rejoindre un coach ===== */
-.rejoindre {
-  max-width: 460px;
+/* ===== Navigation de l'en-tête ===== */
+.header-nav {
+  display: flex;
+  gap: 0.25rem;
+  margin-right: auto;
+}
+.header-nav a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.7rem;
+  border-radius: 8px;
+  color: var(--texte-discret);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.header-nav a:hover {
+  background: var(--fond);
+}
+.header-nav a.active {
+  color: var(--primaire-fonce);
+  background: var(--primaire-clair);
+}
+
+/* ===== Athlète : choisir un coach ===== */
+.recherche {
+  font: inherit;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--bordure);
+  border-radius: 8px;
+  max-width: 360px;
+  width: 100%;
+}
+.attente {
+  max-width: 520px;
   width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 0.75rem;
 }
-.rejoindre p {
+.attente p {
   margin: 0;
 }
-.form .input-code {
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  font-weight: 600;
+
+/* ===== Messagerie ===== */
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0;
+  overflow: hidden;
+}
+.conversation-messages {
+  height: min(60vh, 520px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+}
+.conversation-vide {
+  margin: auto;
+  color: var(--texte-discret);
   text-align: center;
+}
+.bulle {
+  max-width: min(75%, 520px);
+  padding: 0.5rem 0.75rem;
+  border-radius: 14px;
+}
+.bulle p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bulle-heure {
+  display: block;
+  font-size: 0.7rem;
+  opacity: 0.75;
+  margin-top: 0.15rem;
+}
+.bulle-moi {
+  align-self: flex-end;
+  background: var(--primaire);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+.bulle-autre {
+  align-self: flex-start;
+  background: var(--fond);
+  border-bottom-left-radius: 4px;
+}
+.conversation > .error {
+  margin: 0 1rem;
+}
+.conversation-saisie {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--bordure);
+}
+.conversation-saisie textarea {
+  flex: 1;
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--bordure);
+  border-radius: 8px;
+  resize: none;
 }
 
 /* ===== Calendrier ===== */
@@ -727,8 +844,13 @@ legend {
   .form-ligne {
     grid-template-columns: 1fr;
   }
-  .invitation-code {
-    align-items: flex-start;
+  .header-inner {
+    flex-wrap: wrap;
+  }
+  /* Sur mobile, la navigation passe sur une deuxième ligne */
+  .header-nav {
+    order: 3;
+    width: 100%;
   }
   .modal-fond {
     align-items: flex-end;

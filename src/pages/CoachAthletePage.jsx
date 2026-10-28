@@ -75,13 +75,18 @@ export default function CoachAthletePage() {
         <h1>
           {athlete.prenom} {athlete.nom}
         </h1>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => setFenetre({ mode: 'creer', date: lundi })}
-        >
-          + Nouvelle séance
-        </button>
+        <div className="page-actions">
+          <Link to={`/coach/athletes/${athleteId}/messages`} className="btn btn-ghost">
+            Messages
+          </Link>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setFenetre({ mode: 'creer', date: lundi })}
+          >
+            + Nouvelle séance
+          </button>
+        </div>
       </div>
 
       <WeekNav lundi={lundi} onChange={setLundi} />
