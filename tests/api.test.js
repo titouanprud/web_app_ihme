@@ -8,6 +8,7 @@ import { createApp } from '../server/app.js';
 import { pool } from '../server/db.js';
 import { migrate } from '../server/migrate.js';
 import { loadJwtSecret } from '../server/jwt.js';
+import { estimerBlocs } from '../server/partage/estimation.js';
 
 let server;
 let baseUrl;
@@ -354,6 +355,82 @@ describe('blocs de séance', () => {
       },
     ]);
     assert.equal(imbrique.status, 400);
+  });
+});
+
+describe('ski-alpinisme et D+', () => {
+  // 20 min d'échauffement (D+ 100 m), 3 × (10 min Z3, D+ 150 m + 5 min de descente)
+  const BLOCS_SKI = [
+    {
+      type: 'echauffement',
+      mesure: 'duree',
+      valeur: 1200,
+      cible: { type: 'zone', min: 1 },
+      dplus: 100,
+    },
+    {
+      type: 'repetition',
+      repetitions: 3,
+      blocs: [
+        {
+          type: 'intervalle',
+          mesure: 'duree',
+          valeur: 600,
+          cible: { type: 'zone', min: 3 },
+          dplus: 150,
+        },
+        { type: 'recuperation', mesure: 'duree', valeur: 300 },
+      ],
+    },
+  ];
+
+  test('calcul partagé : le D+ total compte les répétitions', () => {
+    const t = estimerBlocs(BLOCS_SKI);
+    assert.equal(t.dplus, 100 + 3 * 150);
+    assert.equal(t.duree, 1200 + 3 * (600 + 300));
+  });
+
+  test('le D+ de la séance est la somme des blocs, sinon la valeur saisie', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const ski = { ...SEANCE, sport: 'ski_alpi', athleteId: athlete.user.id };
+
+    const avecBlocs = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      // La valeur saisie est ignorée quand les blocs ont un D+
+      body: { ...ski, blocs: BLOCS_SKI, dplusPrevuM: 9999 },
+    });
+    assert.equal(avecBlocs.status, 201);
+    assert.equal(avecBlocs.body.dplusPrevuM, 550);
+    assert.equal(avecBlocs.body.blocs[1].blocs[0].dplus, 150);
+
+    const sansBlocs = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...ski, dplusPrevuM: 1200 },
+    });
+    assert.equal(sansBlocs.body.dplusPrevuM, 1200);
+  });
+
+  test('D+ refusé hors course / vélo / ski, ou hors de 0 à 10 000 m', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const essai = (sport, blocs) =>
+      api('seances', {
+        method: 'POST',
+        token: coach.token,
+        body: { ...SEANCE, sport, athleteId: athlete.user.id, blocs },
+      });
+    const bloc = (dplus) => [{ type: 'intervalle', mesure: 'duree', valeur: 600, dplus }];
+
+    assert.equal((await essai('renfo', bloc(100))).status, 400);
+    assert.equal((await essai('velo', bloc(10001))).status, 400);
+    assert.equal((await essai('ski_alpi', bloc(-5))).status, 400);
+    // Pas d'allure en ski-alpinisme : seulement zone ou aucune cible
+    const allure = await essai('ski_alpi', [
+      { type: 'intervalle', mesure: 'duree', valeur: 600, cible: { type: 'allure', min: 300 } },
+    ]);
+    assert.equal(allure.status, 400);
+    assert.equal((await essai('ski_alpi', bloc(800))).status, 201);
   });
 });
 

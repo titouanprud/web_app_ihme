@@ -1,4 +1,10 @@
-import { TYPES_BLOC, formaterCible, formaterMesure, resumerTotaux } from '../blocs.js';
+import {
+  TYPES_BLOC,
+  formaterCible,
+  formaterDplus,
+  formaterMesure,
+  resumerTotaux,
+} from '../blocs.js';
 
 // Affichage en lecture seule de la structure d'une séance (côté athlète et coach).
 export default function BlocsAffichage({ blocs }) {
@@ -29,6 +35,7 @@ function ListeLecture({ blocs }) {
             <span>
               <strong>{formaterMesure(bloc)}</strong>
               {formaterCible(bloc.cible) && ` · ${formaterCible(bloc.cible)}`}
+              {bloc.dplus > 0 && ` · ${formaterDplus(bloc.dplus)}`}
             </span>
             {bloc.note && <span className="texte-discret">{bloc.note}</span>}
           </li>

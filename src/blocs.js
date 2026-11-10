@@ -1,9 +1,13 @@
+import { estimerBlocs } from '../server/partage/estimation.js';
+
 // Outils pour les blocs de séance (même structure que server/blocs.js) :
 // libellés, valeurs par défaut, formatage des durées / distances / allures et totaux.
+// Les calculs de totaux sont partagés avec le serveur (server/partage/estimation.js).
 
 export const SPORTS = [
   { value: 'course', label: 'Course à pied' },
   { value: 'velo', label: 'Vélo' },
+  { value: 'ski_alpi', label: 'Ski-alpinisme' },
   { value: 'renfo', label: 'Renforcement' },
   { value: 'autre', label: 'Autre' },
 ];
@@ -24,9 +28,13 @@ export const TYPES_BLOC = {
 export const CIBLES_PAR_SPORT = {
   course: ['allure', 'zone', 'aucune'],
   velo: ['puissance', 'zone', 'aucune'],
+  ski_alpi: ['zone', 'aucune'],
   renfo: ['zone', 'aucune'],
   autre: ['zone', 'aucune'],
 };
+
+// Sports pour lesquels un D+ (dénivelé positif) peut être prévu
+export const SPORTS_AVEC_DPLUS = ['course', 'velo', 'ski_alpi'];
 
 export const LIBELLES_CIBLE = {
   allure: 'Allure (min/km)',
@@ -70,12 +78,14 @@ export function nouveauBloc(type, sport) {
   return { type, mesure: 'duree', valeur: duree, cible: zone(1), note: '' };
 }
 
-// Quand le sport change, les cibles impossibles pour le nouveau sport sont retirées.
+// Quand le sport change, les cibles impossibles pour le nouveau sport sont retirées,
+// ainsi que le D+ si le nouveau sport n'en a pas.
 export function adapterAuSport(blocs, sport) {
   const adapter = (bloc) => {
     if (bloc.type === 'repetition') return { ...bloc, blocs: bloc.blocs.map(adapter) };
     const permise = CIBLES_PAR_SPORT[sport].includes(bloc.cible?.type ?? 'aucune');
-    return permise ? bloc : { ...bloc, cible: cibleParDefaut('aucune') };
+    const { dplus, ...reste } = permise ? bloc : { ...bloc, cible: cibleParDefaut('aucune') };
+    return SPORTS_AVEC_DPLUS.includes(sport) && dplus !== undefined ? { ...reste, dplus } : reste;
   };
   return blocs.map(adapter);
 }
@@ -112,6 +122,11 @@ export function formaterDistance(metres) {
   return `${String(km).replace('.', ',')} km`;
 }
 
+// 1200 → "D+ 1 200 m"
+export function formaterDplus(metres) {
+  return `D+ ${metres.toLocaleString('fr-FR')} m`;
+}
+
 // "400", "400 m" → 400 ; "1,5 km", "10km" → 1500, 10000 ; un nombre seul < 50 = des km
 export function lireDistance(texte) {
   const resultat = texte
@@ -140,47 +155,16 @@ export function formaterCible(cible) {
 
 // ----- Totaux -----
 
-// Durée (s) et distance (m) totales. Quand une valeur ne peut pas être calculée
-// (ex. 1000 m sans allure), le total correspondant est marqué incomplet.
-export function totaux(blocs) {
-  let duree = 0;
-  let distance = 0;
-  let dureeComplete = true;
-  let distanceComplete = true;
+// Durée (s), distance (m) et D+ (m) totaux : voir server/partage/estimation.js
+export const totaux = estimerBlocs;
 
-  for (const bloc of blocs) {
-    if (bloc.type === 'repetition') {
-      const sous = totaux(bloc.blocs);
-      duree += sous.duree * bloc.repetitions;
-      distance += sous.distance * bloc.repetitions;
-      dureeComplete &&= sous.dureeComplete;
-      distanceComplete &&= sous.distanceComplete;
-      continue;
-    }
-    // Allure moyenne de la fourchette, en secondes par km
-    const allure =
-      bloc.cible?.type === 'allure'
-        ? (bloc.cible.min + (bloc.cible.max ?? bloc.cible.min)) / 2
-        : null;
-    if (bloc.mesure === 'duree') {
-      duree += bloc.valeur;
-      if (allure) distance += (bloc.valeur / allure) * 1000;
-      else distanceComplete = false;
-    } else {
-      distance += bloc.valeur;
-      if (allure) duree += (bloc.valeur / 1000) * allure;
-      else dureeComplete = false;
-    }
-  }
-  return { duree, distance, dureeComplete, distanceComplete };
-}
-
-// Texte du récapitulatif, ex. "≈ 58 min · 11,2 km"
+// Texte du récapitulatif, ex. "58 min · 11,2 km · D+ 300 m"
 export function resumerTotaux(blocs) {
   const t = totaux(blocs);
   const morceaux = [];
   if (t.duree > 0) morceaux.push(`${t.dureeComplete ? '' : '≥ '}${Math.round(t.duree / 60)} min`);
   if (t.distance > 0)
     morceaux.push(`${t.distanceComplete ? '' : '≥ '}${formaterDistance(t.distance)}`);
+  if (t.dplus > 0) morceaux.push(formaterDplus(t.dplus));
   return morceaux.join(' · ');
 }

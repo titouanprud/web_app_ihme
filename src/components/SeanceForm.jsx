@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SPORTS, adapterAuSport, resumerTotaux, totaux } from '../blocs.js';
+import { SPORTS, SPORTS_AVEC_DPLUS, adapterAuSport, resumerTotaux, totaux } from '../blocs.js';
 import { TYPES_SEANCE } from '../libelles.js';
 import BlocsEditor from './BlocsEditor.jsx';
 import { ErrorMessage } from './Feedback.jsx';
@@ -21,6 +21,7 @@ export default function SeanceForm({ initial, onSubmit, onCancel, avecDate = tru
         : 'course',
     type: initial.type ?? 'endurance',
     dureePrevueMin: initial.dureePrevueMin ?? '',
+    dplusPrevuM: initial.dplusPrevuM ?? '',
     description: initial.description ?? '',
     blocs: initial.blocs ?? [],
   });
@@ -36,16 +37,25 @@ export default function SeanceForm({ initial, onSubmit, onCancel, avecDate = tru
   // Si les blocs permettent de calculer la durée, elle est remplie automatiquement
   const t = totaux(valeurs.blocs);
   const dureeAuto = valeurs.blocs.length > 0 && t.dureeComplete ? Math.round(t.duree / 60) : null;
+  // Même principe pour le D+ : somme des blocs, sinon saisie directe
+  const avecDplus = SPORTS_AVEC_DPLUS.includes(valeurs.sport);
+  const dplusAuto = t.dplus > 0 ? t.dplus : null;
 
   async function envoyer(e) {
     e.preventDefault();
     setEnvoi(true);
     setErreur('');
-    const duree =
-      dureeAuto ?? (valeurs.dureePrevueMin === '' ? null : Number(valeurs.dureePrevueMin));
+    const nombre = (v) => (v === '' ? null : Number(v));
+    const duree = dureeAuto ?? nombre(valeurs.dureePrevueMin);
+    const dplus = avecDplus ? (dplusAuto ?? nombre(valeurs.dplusPrevuM)) : null;
     try {
       const { date, ...contenu } = valeurs;
-      await onSubmit({ ...(avecDate ? { date } : {}), ...contenu, dureePrevueMin: duree });
+      await onSubmit({
+        ...(avecDate ? { date } : {}),
+        ...contenu,
+        dureePrevueMin: duree,
+        dplusPrevuM: dplus,
+      });
     } catch (err) {
       setErreur(err.message);
       setEnvoi(false);
@@ -115,19 +125,38 @@ export default function SeanceForm({ initial, onSubmit, onCancel, avecDate = tru
         )}
       </fieldset>
 
-      <label>
-        Durée prévue (min)
-        <input
-          type="number"
-          name="dureePrevueMin"
-          value={dureeAuto ?? valeurs.dureePrevueMin}
-          onChange={changer}
-          min={0}
-          max={1440}
-          disabled={dureeAuto !== null}
-        />
-        {dureeAuto !== null && <span className="texte-discret">Calculée à partir des blocs.</span>}
-      </label>
+      <div className="form-ligne">
+        <label>
+          Durée prévue (min)
+          <input
+            type="number"
+            name="dureePrevueMin"
+            value={dureeAuto ?? valeurs.dureePrevueMin}
+            onChange={changer}
+            min={0}
+            max={1440}
+            disabled={dureeAuto !== null}
+          />
+          {dureeAuto !== null && (
+            <span className="texte-discret">Calculée à partir des blocs.</span>
+          )}
+        </label>
+        {avecDplus && (
+          <label>
+            D+ prévu (m)
+            <input
+              type="number"
+              name="dplusPrevuM"
+              value={dplusAuto ?? valeurs.dplusPrevuM}
+              onChange={changer}
+              min={0}
+              max={20000}
+              disabled={dplusAuto !== null}
+            />
+            {dplusAuto !== null && <span className="texte-discret">Somme des D+ des blocs.</span>}
+          </label>
+        )}
+      </div>
       <label>
         Consignes
         <textarea

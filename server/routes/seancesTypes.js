@@ -10,7 +10,8 @@ import { lireContenuSeance } from './seances.js';
 const router = Router();
 router.use(requireAuth, requireRole('coach'));
 
-const COLONNES = `id, titre, sport, type, duree_prevue_min AS "dureePrevueMin", description, blocs`;
+const COLONNES = `id, titre, sport, type, duree_prevue_min AS "dureePrevueMin",
+  dplus_prevu_m AS "dplusPrevuM", description, blocs`;
 
 // GET /api/seances-types : les modèles du coach connecté
 router.get('/', async (req, res) => {
@@ -25,10 +26,20 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const s = lireContenuSeance(req.body);
   const { rows } = await pool.query(
-    `INSERT INTO seances_types (coach_id, titre, sport, type, duree_prevue_min, description, blocs)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO seances_types
+       (coach_id, titre, sport, type, duree_prevue_min, description, blocs, dplus_prevu_m)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING ${COLONNES}`,
-    [req.user.id, s.titre, s.sport, s.type, s.dureePrevueMin, s.description, s.blocs],
+    [
+      req.user.id,
+      s.titre,
+      s.sport,
+      s.type,
+      s.dureePrevueMin,
+      s.description,
+      s.blocs,
+      s.dplusPrevuM,
+    ],
   );
   res.status(201).json(rows[0]);
 });
@@ -39,10 +50,21 @@ router.put('/:id', async (req, res) => {
   const s = lireContenuSeance(req.body);
   const { rows } = await pool.query(
     `UPDATE seances_types
-     SET titre = $1, sport = $2, type = $3, duree_prevue_min = $4, description = $5, blocs = $6
-     WHERE id = $7 AND coach_id = $8
+     SET titre = $1, sport = $2, type = $3, duree_prevue_min = $4, description = $5, blocs = $6,
+         dplus_prevu_m = $7
+     WHERE id = $8 AND coach_id = $9
      RETURNING ${COLONNES}`,
-    [s.titre, s.sport, s.type, s.dureePrevueMin, s.description, s.blocs, id, req.user.id],
+    [
+      s.titre,
+      s.sport,
+      s.type,
+      s.dureePrevueMin,
+      s.description,
+      s.blocs,
+      s.dplusPrevuM,
+      id,
+      req.user.id,
+    ],
   );
   if (!rows[0]) throw new HttpError(404, 'Modèle introuvable.');
   res.json(rows[0]);

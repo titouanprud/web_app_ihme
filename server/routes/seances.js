@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { SPORTS, validerBlocs } from '../blocs.js';
+import { SPORTS, SPORTS_AVEC_DPLUS, validerBlocs } from '../blocs.js';
 import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
 import { verifierAthleteDuCoach } from '../liens.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
+import { estimerBlocs } from '../partage/estimation.js';
 import * as valider from '../validation.js';
 
 const router = Router();
@@ -13,7 +14,8 @@ export const TYPES_SEANCE = ['endurance', 'fractionne', 'renfo', 'competition', 
 // Colonnes renvoyées pour une séance, avec son retour éventuel regroupé dans un objet.
 const SELECT_SEANCE = `
   SELECT s.id, s.athlete_id AS "athleteId", s.date, s.titre, s.sport, s.type,
-         s.duree_prevue_min AS "dureePrevueMin", s.description, s.blocs, s.statut,
+         s.duree_prevue_min AS "dureePrevueMin", s.dplus_prevu_m AS "dplusPrevuM",
+         s.description, s.blocs, s.statut,
          CASE WHEN r.id IS NULL THEN NULL
               ELSE json_build_object(
                 'difficulte', r.difficulte,
@@ -34,15 +36,35 @@ function lireSeance(body = {}) {
   return { date: valider.dateISO(body.date, 'La date'), ...lireContenuSeance(body) };
 }
 
+const MAX_DPLUS_SEANCE = 20000;
+
+// D+ de la séance : la somme des D+ des blocs (répétitions comprises) si au moins un bloc
+// en a un, sinon la valeur saisie directement par le coach. Rien pour renfo / autre.
+function lireDplus(body, sport, blocs) {
+  if (!SPORTS_AVEC_DPLUS.includes(sport)) return null;
+  const somme = estimerBlocs(blocs).dplus;
+  if (somme > MAX_DPLUS_SEANCE) {
+    throw new HttpError(400, `Le D+ total des blocs (${somme} m) dépasse 20 000 m.`);
+  }
+  if (somme > 0) return somme;
+  return valider.entier(body.dplusPrevuM, 'Le D+ de la séance', {
+    min: 0,
+    max: MAX_DPLUS_SEANCE,
+    optionnel: true,
+  });
+}
+
 // Contenu d'une séance sans la date (réutilisé pour la bibliothèque de séances types).
 // Les blocs sont convertis en texte JSON pour la colonne JSONB.
 export function lireContenuSeance(body = {}) {
   const sport = valider.choix(body.sport, 'Le sport', SPORTS);
+  const blocs = validerBlocs(body.blocs, sport);
   return {
     titre: valider.texte(body.titre, 'Le titre', { max: 100 }),
     sport,
     type: valider.choix(body.type, 'Le type', TYPES_SEANCE),
-    blocs: JSON.stringify(validerBlocs(body.blocs, sport)),
+    blocs: JSON.stringify(blocs),
+    dplusPrevuM: lireDplus(body, sport, blocs),
     dureePrevueMin: valider.entier(body.dureePrevueMin, 'La durée prévue', {
       min: 0,
       max: 1440,
@@ -92,8 +114,9 @@ router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
 
   const { rows } = await pool.query(
     `INSERT INTO seances
-       (coach_id, athlete_id, date, titre, sport, type, duree_prevue_min, description, blocs)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (coach_id, athlete_id, date, titre, sport, type, duree_prevue_min, description, blocs,
+        dplus_prevu_m)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id`,
     [
       req.user.id,
@@ -105,6 +128,7 @@ router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
       s.dureePrevueMin,
       s.description,
       s.blocs,
+      s.dplusPrevuM,
     ],
   );
   res.status(201).json(await trouverSeance(rows[0].id));
@@ -115,13 +139,24 @@ router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   const id = valider.identifiant(req.params.id);
   const s = lireSeance(req.body);
 
-  // La condition coach_id = $9 garantit qu'un coach ne modifie que ses propres séances.
+  // La condition coach_id = $10 garantit qu'un coach ne modifie que ses propres séances.
   const { rowCount } = await pool.query(
     `UPDATE seances
      SET date = $1, titre = $2, sport = $3, type = $4, duree_prevue_min = $5,
-         description = $6, blocs = $7
-     WHERE id = $8 AND coach_id = $9`,
-    [s.date, s.titre, s.sport, s.type, s.dureePrevueMin, s.description, s.blocs, id, req.user.id],
+         description = $6, blocs = $7, dplus_prevu_m = $8
+     WHERE id = $9 AND coach_id = $10`,
+    [
+      s.date,
+      s.titre,
+      s.sport,
+      s.type,
+      s.dureePrevueMin,
+      s.description,
+      s.blocs,
+      s.dplusPrevuM,
+      id,
+      req.user.id,
+    ],
   );
   if (rowCount === 0) throw new HttpError(404, 'Séance introuvable.');
   res.json(await trouverSeance(id));
@@ -138,8 +173,10 @@ router.post('/:id/dupliquer', requireAuth, requireRole('coach'), async (req, res
   // INSERT … SELECT : copie directe en base ; "WHERE coach_id" protège les séances des autres coachs
   const { rows } = await pool.query(
     `INSERT INTO seances
-       (coach_id, athlete_id, date, titre, sport, type, duree_prevue_min, description, blocs)
-     SELECT coach_id, $1, $2, titre, sport, type, duree_prevue_min, description, blocs
+       (coach_id, athlete_id, date, titre, sport, type, duree_prevue_min, description, blocs,
+        dplus_prevu_m)
+     SELECT coach_id, $1, $2, titre, sport, type, duree_prevue_min, description, blocs,
+            dplus_prevu_m
      FROM seances WHERE id = $3 AND coach_id = $4
      RETURNING id`,
     [athleteId, date, id, req.user.id],

@@ -110,8 +110,8 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 - **users** : id, email, mot_de_passe_hash, prénom, nom, rôle (`coach` | `athlete`), date_création
 - **coach_athletes** : id, coach_id → users, athlete_id → users (unique : un athlète n'a qu'un coach), statut (`en_attente` | `acceptee` | `refusee`), date_ajout
 - **messages** : id, coach_id → users, athlete_id → users, auteur_id → users, contenu, date_envoi, lu
-- **seances** : id, coach_id, athlete_id, date, titre, sport (`course` | `velo` | `renfo` | `autre`), type, durée_prévue_min, description, blocs (JSONB : liste des blocs, voir `server/blocs.js`), statut (`prévue` | `réalisée` | `non_réalisée`)
-- **seances_types** : id, coach_id → users, titre, sport, type, durée_prévue_min, description, blocs (modèles sans date de la bibliothèque)
+- **seances** : id, coach_id, athlete_id, date, titre, sport (`course` | `velo` | `ski_alpi` | `renfo` | `autre`), type, durée_prévue_min, dplus_prevu_m (D+ en mètres), description, blocs (JSONB : liste des blocs, voir `server/blocs.js`), statut (`prévue` | `réalisée` | `non_réalisée`)
+- **seances_types** : id, coach_id → users, titre, sport, type, durée_prévue_min, dplus_prevu_m, description, blocs (modèles sans date de la bibliothèque)
 - **retours** : id, seance_id → seances, difficulte (1-10), forme (1-10), commentaire, date (les anciennes colonnes ressenti et durée_réelle_min sont conservées mais plus utilisées)
 - **records** : athlete_id → users, distance (`5k` | `10k` | `semi` | `marathon`), temps_sec, date_record
 - **seuils** : athlete_id → users, sv1_allure_sec, sv1_fc, sv2_allure_sec, sv2_fc, date_maj
@@ -223,7 +223,9 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 
 ## 12. Décisions prises
 - Un athlète a **un seul coach** ; un coach peut avoir plusieurs athlètes.
-- Le sport de la séance est choisi dans une liste (course à pied, vélo, renforcement, autre) : il détermine les cibles possibles des blocs (allure ou zone en course, puissance ou zone à vélo).
+- Le sport de la séance est choisi dans une liste (course à pied, vélo, ski-alpinisme, renforcement, autre) : il détermine les cibles possibles des blocs (allure ou zone en course, puissance ou zone à vélo, zone en ski-alpinisme).
+- **D+** : chaque bloc peut avoir un D+ visé (0 à 10 000 m) en course, vélo et ski-alpinisme. Le D+ de la séance est la somme des blocs (répétitions comprises) ; si aucun bloc n'en a, le coach le saisit directement (20 000 m maximum).
+- **Code partagé** : les calculs sur les blocs (durée, distance, D+) sont dans `server/partage/estimation.js`, importé par le serveur et par React (`src/blocs.js`). Le fichier est rangé dans `server/` car le Dockerfile de production ne copie que ce dossier.
 
 ## 13. Questions ouvertes
 - Date de rendu à confirmer.

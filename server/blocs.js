@@ -7,17 +7,21 @@ import { HttpError } from './errors.js';
 //     mesure: 'duree' | 'distance',
 //     valeur: secondes (durée) ou mètres (distance),
 //     cible: { type: 'allure' | 'puissance' | 'zone' | 'aucune', min, max },
+//     dplus: dénivelé positif visé en mètres (facultatif : course, vélo, ski-alpinisme),
 //     note: texte court }
 // Répétition (un seul niveau) :
 //   { type: 'repetition', repetitions: 2 à 50, blocs: [blocs simples] }
 
-export const SPORTS = ['course', 'velo', 'renfo', 'autre'];
+export const SPORTS = ['course', 'velo', 'ski_alpi', 'renfo', 'autre'];
+// Sports pour lesquels un D+ (dénivelé positif) peut être prévu
+export const SPORTS_AVEC_DPLUS = ['course', 'velo', 'ski_alpi'];
 const TYPES_BLOC = ['echauffement', 'intervalle', 'recuperation', 'retour_calme'];
 
 // Cibles autorisées selon le sport
 const CIBLES_PAR_SPORT = {
   course: ['allure', 'zone', 'aucune'],
   velo: ['puissance', 'zone', 'aucune'],
+  ski_alpi: ['zone', 'aucune'],
   renfo: ['zone', 'aucune'],
   autre: ['zone', 'aucune'],
 };
@@ -32,6 +36,7 @@ const BORNES_MESURE = {
   duree: { min: 10, max: 6 * 3600, libelle: 'La durée (entre 0:10 et 6:00:00)' },
   distance: { min: 50, max: 300000, libelle: 'La distance (entre 50 m et 300 km)' },
 };
+const BORNES_DPLUS = { min: 0, max: 10000 };
 const MAX_BLOCS = 30;
 const MAX_SOUS_BLOCS = 10;
 
@@ -74,13 +79,25 @@ function validerBlocSimple(bloc, sport, position) {
   const note = typeof bloc.note === 'string' ? bloc.note.trim() : '';
   if (note.length > 200) throw erreur(position, 'la note ne doit pas dépasser 200 caractères.');
 
-  return {
+  const propre = {
     type: bloc.type,
     mesure: bloc.mesure,
     valeur: bloc.valeur,
     cible: validerCible(bloc.cible, sport, position),
     note,
   };
+
+  // D+ facultatif : la clé n'est enregistrée que si une valeur est donnée
+  if (bloc.dplus !== undefined && bloc.dplus !== null && bloc.dplus !== '') {
+    if (!SPORTS_AVEC_DPLUS.includes(sport)) {
+      throw erreur(position, 'le D+ n’est possible qu’en course, vélo et ski-alpinisme.');
+    }
+    if (!entierDansBornes(bloc.dplus, BORNES_DPLUS)) {
+      throw erreur(position, 'le D+ doit être un nombre entier de mètres entre 0 et 10 000.');
+    }
+    propre.dplus = bloc.dplus;
+  }
+  return propre;
 }
 
 // Vérifie la liste de blocs envoyée par le client et renvoie une copie "propre"

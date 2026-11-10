@@ -1,6 +1,7 @@
 import {
   CIBLES_PAR_SPORT,
   LIBELLES_CIBLE,
+  SPORTS_AVEC_DPLUS,
   TYPES_BLOC,
   cibleParDefaut,
   formaterChrono,
@@ -183,6 +184,21 @@ function ChampsBloc({ bloc, sport, onChange }) {
         </select>
       </label>
       {cible.type !== 'aucune' && <ChampsCible cible={cible} onChange={changerCible} />}
+      {SPORTS_AVEC_DPLUS.includes(sport) && (
+        <label className="champ-court">
+          D+ (m)
+          <input
+            type="number"
+            min={0}
+            max={10000}
+            value={bloc.dplus ?? ''}
+            onChange={(e) =>
+              changer({ dplus: e.target.value === '' ? null : Number(e.target.value) })
+            }
+            placeholder="option"
+          />
+        </label>
+      )}
       <label className="champ-large">
         Note
         <input

@@ -1,4 +1,4 @@
-import { libelleSport } from '../blocs.js';
+import { formaterDplus, libelleSport } from '../blocs.js';
 import { formaterDate } from '../dates.js';
 import { formaterDuree, libelleType } from '../libelles.js';
 import BlocsAffichage from './BlocsAffichage.jsx';
@@ -23,6 +23,12 @@ export default function SeanceDetails({ seance }) {
           <dt>Durée prévue</dt>
           <dd>{formaterDuree(seance.dureePrevueMin) ?? '—'}</dd>
         </div>
+        {seance.dplusPrevuM > 0 && (
+          <div>
+            <dt>Dénivelé</dt>
+            <dd>{formaterDplus(seance.dplusPrevuM)}</dd>
+          </div>
+        )}
         <div>
           <dt>Statut</dt>
           <dd>

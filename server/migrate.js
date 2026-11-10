@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS seances_types (
   blocs            JSONB NOT NULL DEFAULT '[]'
 );
 
+-- D+ (dénivelé positif) prévu en mètres : somme des D+ des blocs, ou saisi directement
+ALTER TABLE seances ADD COLUMN IF NOT EXISTS dplus_prevu_m INTEGER
+  CHECK (dplus_prevu_m BETWEEN 0 AND 20000);
+ALTER TABLE seances_types ADD COLUMN IF NOT EXISTS dplus_prevu_m INTEGER
+  CHECK (dplus_prevu_m BETWEEN 0 AND 20000);
+
 -- Records personnels de l'athlète (saisis par lui) : un temps par distance
 CREATE TABLE IF NOT EXISTS records (
   athlete_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
