@@ -1190,3 +1190,16 @@ a.btn {
     border-radius: 12px 12px 0 0;
   }
 }
+
+/* ===== Allures de référence ===== */
+.aide-reference {
+  align-self: center;
+  font-size: 0.8rem;
+}
+.marque-modifiee {
+  color: var(--attente);
+  font-weight: 700;
+  text-decoration: none;
+  cursor: help;
+  margin-left: 0.1rem;
+}

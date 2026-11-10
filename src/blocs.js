@@ -1,4 +1,10 @@
-import { estimerBlocs } from '../server/partage/estimation.js';
+import { allureDeReference, estimerBlocs } from '../server/partage/estimation.js';
+
+export {
+  allureDeReference,
+  estimerBloc,
+  resoudreReferences,
+} from '../server/partage/estimation.js';
 
 // Outils pour les blocs de séance (même structure que server/blocs.js) :
 // libellés, valeurs par défaut, formatage des durées / distances / allures et totaux.
@@ -26,7 +32,7 @@ export const TYPES_BLOC = {
 };
 
 export const CIBLES_PAR_SPORT = {
-  course: ['allure', 'zone', 'aucune'],
+  course: ['allure', 'reference', 'zone', 'aucune'],
   velo: ['puissance', 'zone', 'aucune'],
   ski_alpi: ['zone', 'aucune'],
   renfo: ['zone', 'aucune'],
@@ -38,10 +44,30 @@ export const SPORTS_AVEC_DPLUS = ['course', 'velo', 'ski_alpi'];
 
 export const LIBELLES_CIBLE = {
   allure: 'Allure (min/km)',
+  reference: 'Allure de référence (@10k, @SV1…)',
   puissance: 'Puissance (W)',
   zone: 'Zone (1 à 5)',
   aucune: 'Sans cible',
 };
+
+// Allures de référence : records (5 km → marathon) et seuils SV1 / SV2 du profil
+export const REFERENCES = [
+  { value: '5k', label: '@5k' },
+  { value: '10k', label: '@10k' },
+  { value: '21k', label: '@21k' },
+  { value: '42k', label: '@42k' },
+  { value: 'sv1', label: '@SV1' },
+  { value: 'sv2', label: '@SV2' },
+];
+
+export function libelleReference(ref) {
+  return REFERENCES.find((r) => r.value === ref)?.label ?? ref;
+}
+
+// Cible "allure de référence" : l'allure est copiée depuis le profil (null si absente)
+export function cibleReference(ref, profil) {
+  return { type: 'reference', ref, allure_sec: allureDeReference(ref, profil), modifiee: false };
+}
 
 // Valeur de départ quand on choisit un type de cible
 const CIBLE_PAR_DEFAUT = {
@@ -51,7 +77,8 @@ const CIBLE_PAR_DEFAUT = {
   aucune: { type: 'aucune' },
 };
 
-export function cibleParDefaut(type) {
+export function cibleParDefaut(type, profil = null) {
+  if (type === 'reference') return cibleReference('10k', profil);
   return { ...CIBLE_PAR_DEFAUT[type] };
 }
 
@@ -145,8 +172,13 @@ export function formaterMesure(bloc) {
 }
 
 // { type: 'allure', min: 260, max: 270 } → "4:20 – 4:30 /km"
+// { type: 'reference', ref: '10k', allure_sec: 252 } → "@10k (4:12 /km)"
 export function formaterCible(cible) {
   if (!cible || cible.type === 'aucune') return '';
+  if (cible.type === 'reference') {
+    const ref = libelleReference(cible.ref);
+    return cible.allure_sec ? `${ref} (${formaterChrono(cible.allure_sec)} /km)` : ref;
+  }
   const fourchette = (f) => (cible.max ? `${f(cible.min)} – ${f(cible.max)}` : f(cible.min));
   if (cible.type === 'allure') return `${fourchette(formaterChrono)} /km`;
   if (cible.type === 'puissance') return `${fourchette(String)} W`;

@@ -18,7 +18,8 @@ const DISTANCES = {
   marathon: { min: 5400, max: 12 * 3600, libelle: 'Le temps sur marathon' },
 };
 
-async function lireProfil(athleteId) {
+// Exporté : la route des séances l'utilise pour calculer les allures de référence (@10k…)
+export async function lireProfil(athleteId) {
   const records = await pool.query(
     `SELECT distance, temps_sec AS "tempsSec", date_record AS "date"
      FROM records WHERE athlete_id = $1`,

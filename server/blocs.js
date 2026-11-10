@@ -1,4 +1,5 @@
 import { HttpError } from './errors.js';
+import { REFERENCES } from './partage/estimation.js';
 
 // Structure d'une séance en blocs, enregistrée dans la colonne JSONB seances.blocs.
 //
@@ -6,7 +7,9 @@ import { HttpError } from './errors.js';
 //   { type: 'echauffement' | 'intervalle' | 'recuperation' | 'retour_calme',
 //     mesure: 'duree' | 'distance',
 //     valeur: secondes (durée) ou mètres (distance),
-//     cible: { type: 'allure' | 'puissance' | 'zone' | 'aucune', min, max },
+//     cible: { type: 'allure' | 'puissance' | 'zone' | 'aucune', min, max }
+//         ou { type: 'reference', ref: '5k' | '10k' | '21k' | '42k' | 'sv1' | 'sv2',
+//              allure_sec: allure copiée du profil (s/km), modifiee: true si le coach l'a changée },
 //     dplus: dénivelé positif visé en mètres (facultatif : course, vélo, ski-alpinisme),
 //     note: texte court }
 // Répétition (un seul niveau) :
@@ -19,7 +22,7 @@ const TYPES_BLOC = ['echauffement', 'intervalle', 'recuperation', 'retour_calme'
 
 // Cibles autorisées selon le sport
 const CIBLES_PAR_SPORT = {
-  course: ['allure', 'zone', 'aucune'],
+  course: ['allure', 'reference', 'zone', 'aucune'],
   velo: ['puissance', 'zone', 'aucune'],
   ski_alpi: ['zone', 'aucune'],
   renfo: ['zone', 'aucune'],
@@ -48,12 +51,34 @@ function entierDansBornes(valeur, { min, max }) {
   return Number.isInteger(valeur) && valeur >= min && valeur <= max;
 }
 
-function validerCible(cible, sport, position) {
+// Allure de référence. Pour un modèle (modele = true), l'allure n'est pas gardée :
+// elle sera calculée avec le profil de l'athlète quand la séance sera créée pour lui.
+// Pour une séance, une allure absente est complétée ensuite par la route (profil de l'athlète).
+function validerReference(cible, position, modele) {
+  if (!REFERENCES.includes(cible.ref)) {
+    throw erreur(position, `la référence doit valoir : ${REFERENCES.join(', ')}.`);
+  }
+  if (modele) return { type: 'reference', ref: cible.ref, allure_sec: null, modifiee: false };
+
+  const allure = cible.allure_sec ?? null;
+  if (allure !== null && !entierDansBornes(allure, BORNES_CIBLE.allure)) {
+    throw erreur(position, `${BORNES_CIBLE.allure.libelle} est invalide.`);
+  }
+  return {
+    type: 'reference',
+    ref: cible.ref,
+    allure_sec: allure,
+    modifiee: cible.modifiee === true,
+  };
+}
+
+function validerCible(cible, sport, position, modele) {
   const type = cible?.type ?? 'aucune';
   if (!CIBLES_PAR_SPORT[sport].includes(type)) {
     throw erreur(position, `la cible « ${type} » n’est pas possible pour ce sport.`);
   }
   if (type === 'aucune') return { type };
+  if (type === 'reference') return validerReference(cible, position, modele);
 
   const bornes = BORNES_CIBLE[type];
   const min = cible.min;
@@ -67,7 +92,7 @@ function validerCible(cible, sport, position) {
   return { type, min, max };
 }
 
-function validerBlocSimple(bloc, sport, position) {
+function validerBlocSimple(bloc, sport, position, modele) {
   if (!TYPES_BLOC.includes(bloc?.type)) throw erreur(position, 'type de bloc inconnu.');
   if (!['duree', 'distance'].includes(bloc.mesure)) {
     throw erreur(position, 'choisir une durée ou une distance.');
@@ -83,7 +108,7 @@ function validerBlocSimple(bloc, sport, position) {
     type: bloc.type,
     mesure: bloc.mesure,
     valeur: bloc.valeur,
-    cible: validerCible(bloc.cible, sport, position),
+    cible: validerCible(bloc.cible, sport, position, modele),
     note,
   };
 
@@ -102,7 +127,8 @@ function validerBlocSimple(bloc, sport, position) {
 
 // Vérifie la liste de blocs envoyée par le client et renvoie une copie "propre"
 // (sans champs inconnus). Lève une erreur 400 qui indique le bloc en cause.
-export function validerBlocs(blocs, sport) {
+// modele = true pour un modèle du catalogue (références gardées sans allure).
+export function validerBlocs(blocs, sport, { modele = false } = {}) {
   if (blocs === undefined || blocs === null) return [];
   if (!Array.isArray(blocs)) throw new HttpError(400, 'Les blocs doivent être une liste.');
   if (blocs.length > MAX_BLOCS) {
@@ -111,7 +137,7 @@ export function validerBlocs(blocs, sport) {
 
   return blocs.map((bloc, i) => {
     const position = String(i + 1);
-    if (bloc?.type !== 'repetition') return validerBlocSimple(bloc, sport, position);
+    if (bloc?.type !== 'repetition') return validerBlocSimple(bloc, sport, position, modele);
 
     if (!entierDansBornes(bloc.repetitions, { min: 2, max: 50 })) {
       throw erreur(position, 'le nombre de répétitions doit être entre 2 et 50.');
@@ -126,7 +152,9 @@ export function validerBlocs(blocs, sport) {
       type: 'repetition',
       repetitions: bloc.repetitions,
       // Pas de répétition dans une répétition : validerBlocSimple refuse le type "repetition"
-      blocs: bloc.blocs.map((sous, j) => validerBlocSimple(sous, sport, `${position}.${j + 1}`)),
+      blocs: bloc.blocs.map((sous, j) =>
+        validerBlocSimple(sous, sport, `${position}.${j + 1}`, modele),
+      ),
     };
   });
 }

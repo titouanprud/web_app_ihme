@@ -225,6 +225,9 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 - Un athlète a **un seul coach** ; un coach peut avoir plusieurs athlètes.
 - Le sport de la séance est choisi dans une liste (course à pied, vélo, ski-alpinisme, renforcement, autre) : il détermine les cibles possibles des blocs (allure ou zone en course, puissance ou zone à vélo, zone en ski-alpinisme).
 - **D+** : chaque bloc peut avoir un D+ visé (0 à 10 000 m) en course, vélo et ski-alpinisme. Le D+ de la séance est la somme des blocs (répétitions comprises) ; si aucun bloc n'en a, le coach le saisit directement (20 000 m maximum).
+- **Allures de référence** (course à pied) : une cible `reference` (`@5k`, `@10k`, `@21k`, `@42k`, `@SV1`, `@SV2`) copie dans le bloc l'allure calculée depuis le profil de l'athlète (temps du record ÷ distance, semi = 21,0975 km, marathon = 42,195 km ; ou seuil SV1 / SV2 du coach). Le coach peut la changer (`modifiee: true`, marquée d'un astérisque). Si le profil ne contient pas la valeur, le serveur refuse la séance tant que le coach n'a pas saisi l'allure. Un modèle du catalogue garde seulement la référence ; le serveur calcule l'allure quand la séance est créée pour un athlète.
+- **Duplication** : une séance dupliquée est une copie exacte, allures de référence comprises (elles ne sont pas recalculées pour l'autre athlète).
+- **Estimation** : avec une allure (fourchette : on prend le milieu), la distance d'un bloc en durée et la durée d'un bloc en distance sont calculées ; la séance affiche sa durée et sa distance estimées, répétitions comprises (« ≥ » si un bloc n'a pas d'allure).
 - **Code partagé** : les calculs sur les blocs (durée, distance, D+) sont dans `server/partage/estimation.js`, importé par le serveur et par React (`src/blocs.js`). Le fichier est rangé dans `server/` car le Dockerfile de production ne copie que ce dossier.
 
 ## 13. Questions ouvertes

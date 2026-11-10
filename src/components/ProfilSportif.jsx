@@ -263,9 +263,9 @@ export function SeuilsForm({ athleteId, seuils, onEnregistre }) {
   );
 }
 
-// Bloc "Profil sportif" affiché sur la page d'un athlète côté coach
-export function ProfilAthleteCoach({ athleteId }) {
-  const { profil, setProfil, erreur } = useProfil(athleteId);
+// Bloc "Profil sportif" affiché sur la page d'un athlète côté coach.
+// Le profil est chargé par la page (useProfil), qui s'en sert aussi pour les allures de référence.
+export function ProfilAthleteCoach({ athleteId, profil, setProfil, erreur }) {
   return (
     <details className="carte profil-coach">
       <summary>

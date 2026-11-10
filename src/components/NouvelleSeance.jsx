@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import SeanceForm from './SeanceForm.jsx';
 
 // Création d'une séance, vide ou à partir d'un modèle de la bibliothèque du coach.
-export default function NouvelleSeance({ date, onSubmit, onCancel }) {
+export default function NouvelleSeance({ date, onSubmit, onCancel, profil }) {
   const [modeles, setModeles] = useState([]);
   const [modeleId, setModeleId] = useState('');
 
@@ -36,6 +36,7 @@ export default function NouvelleSeance({ date, onSubmit, onCancel }) {
         initial={{ ...modele, date }}
         onSubmit={onSubmit}
         onCancel={onCancel}
+        profil={profil}
       />
     </>
   );

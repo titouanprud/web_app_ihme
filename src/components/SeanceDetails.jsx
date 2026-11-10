@@ -1,4 +1,4 @@
-import { formaterDplus, libelleSport } from '../blocs.js';
+import { formaterDistance, formaterDplus, libelleSport, totaux } from '../blocs.js';
 import { formaterDate } from '../dates.js';
 import { formaterDuree, libelleType } from '../libelles.js';
 import BlocsAffichage from './BlocsAffichage.jsx';
@@ -7,6 +7,8 @@ import { StatusBadge } from './WeekCalendar.jsx';
 // Détail d'une séance et du retour de l'athlète (lecture seule).
 export default function SeanceDetails({ seance }) {
   const { retour } = seance;
+  // Distance estimée à partir des blocs (avec les allures), "≥" si incomplète
+  const t = totaux(seance.blocs ?? []);
   return (
     <div className="details">
       <p className="details-date">{formaterDate(seance.date)}</p>
@@ -23,6 +25,15 @@ export default function SeanceDetails({ seance }) {
           <dt>Durée prévue</dt>
           <dd>{formaterDuree(seance.dureePrevueMin) ?? '—'}</dd>
         </div>
+        {t.distance > 0 && (
+          <div>
+            <dt>Distance estimée</dt>
+            <dd>
+              {t.distanceComplete ? '' : '≥ '}
+              {formaterDistance(t.distance)}
+            </dd>
+          </div>
+        )}
         {seance.dplusPrevuM > 0 && (
           <div>
             <dt>Dénivelé</dt>

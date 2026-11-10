@@ -1,9 +1,12 @@
 import {
   CIBLES_PAR_SPORT,
   LIBELLES_CIBLE,
+  REFERENCES,
   SPORTS_AVEC_DPLUS,
   TYPES_BLOC,
+  allureDeReference,
   cibleParDefaut,
+  cibleReference,
   formaterChrono,
   formaterDistance,
   lireChrono,
@@ -14,14 +17,25 @@ import ChampTexteValide from './ChampTexteValide.jsx';
 
 // Éditeur de la structure d'une séance : liste de blocs que l'on peut ajouter,
 // modifier, déplacer (↑ ↓), dupliquer et supprimer.
-export default function BlocsEditor({ blocs, sport, onChange }) {
-  return <ListeBlocs blocs={blocs} sport={sport} onChange={onChange} imbrique={false} />;
+// - profil : profil de l'athlète (records, seuils) pour les allures de référence (@10k…)
+// - modele : true pour un modèle du catalogue (la référence est gardée sans allure)
+// "options" regroupe ces deux valeurs, transmises telles quelles à chaque bloc.
+export default function BlocsEditor({ blocs, sport, onChange, profil = null, modele = false }) {
+  return (
+    <ListeBlocs
+      blocs={blocs}
+      sport={sport}
+      onChange={onChange}
+      imbrique={false}
+      options={{ profil, modele }}
+    />
+  );
 }
 
 const TYPES_AJOUTABLES = ['echauffement', 'intervalle', 'recuperation', 'retour_calme'];
 
 // imbrique = true pour les blocs à l'intérieur d'une répétition (pas de répétition dedans)
-function ListeBlocs({ blocs, sport, onChange, imbrique }) {
+function ListeBlocs({ blocs, sport, onChange, imbrique, options }) {
   const remplacer = (i, bloc) => onChange(blocs.map((b, j) => (j === i ? bloc : b)));
   const supprimer = (i) => onChange(blocs.filter((_, j) => j !== i));
   const dupliquer = (i) =>
@@ -83,9 +97,19 @@ function ListeBlocs({ blocs, sport, onChange, imbrique }) {
                 </span>
               </div>
               {bloc.type === 'repetition' ? (
-                <ChampsRepetition bloc={bloc} sport={sport} onChange={(b) => remplacer(i, b)} />
+                <ChampsRepetition
+                  bloc={bloc}
+                  sport={sport}
+                  onChange={(b) => remplacer(i, b)}
+                  options={options}
+                />
               ) : (
-                <ChampsBloc bloc={bloc} sport={sport} onChange={(b) => remplacer(i, b)} />
+                <ChampsBloc
+                  bloc={bloc}
+                  sport={sport}
+                  onChange={(b) => remplacer(i, b)}
+                  options={options}
+                />
               )}
             </li>
           ))}
@@ -107,7 +131,7 @@ function ListeBlocs({ blocs, sport, onChange, imbrique }) {
   );
 }
 
-function ChampsRepetition({ bloc, sport, onChange }) {
+function ChampsRepetition({ bloc, sport, onChange, options }) {
   return (
     <div className="bloc-champs">
       <label className="champ-court">
@@ -126,12 +150,13 @@ function ChampsRepetition({ bloc, sport, onChange }) {
         sport={sport}
         onChange={(blocs) => onChange({ ...bloc, blocs })}
         imbrique
+        options={options}
       />
     </div>
   );
 }
 
-function ChampsBloc({ bloc, sport, onChange }) {
+function ChampsBloc({ bloc, sport, onChange, options }) {
   const changer = (modif) => onChange({ ...bloc, ...modif });
   const changerCible = (modif) => changer({ cible: { ...bloc.cible, ...modif } });
   const cible = bloc.cible ?? cibleParDefaut('aucune');
@@ -174,7 +199,7 @@ function ChampsBloc({ bloc, sport, onChange }) {
         Cible
         <select
           value={cible.type}
-          onChange={(e) => changer({ cible: cibleParDefaut(e.target.value) })}
+          onChange={(e) => changer({ cible: cibleParDefaut(e.target.value, options.profil) })}
         >
           {CIBLES_PAR_SPORT[sport].map((type) => (
             <option key={type} value={type}>
@@ -183,7 +208,12 @@ function ChampsBloc({ bloc, sport, onChange }) {
           ))}
         </select>
       </label>
-      {cible.type !== 'aucune' && <ChampsCible cible={cible} onChange={changerCible} />}
+      {cible.type === 'reference' && (
+        <ChampsReference cible={cible} onChange={(c) => changer({ cible: c })} options={options} />
+      )}
+      {!['aucune', 'reference'].includes(cible.type) && (
+        <ChampsCible cible={cible} onChange={changerCible} />
+      )}
       {SPORTS_AVEC_DPLUS.includes(sport) && (
         <label className="champ-court">
           D+ (m)
@@ -209,6 +239,70 @@ function ChampsBloc({ bloc, sport, onChange }) {
         />
       </label>
     </div>
+  );
+}
+
+// Allure de référence (@10k, @SV1…) : copiée depuis le profil, puis modifiable.
+// modifiee passe à true quand le coach saisit une allure différente de celle du profil.
+function ChampsReference({ cible, onChange, options }) {
+  const duProfil = allureDeReference(cible.ref, options.profil);
+  return (
+    <>
+      <label className="champ-court">
+        Référence
+        <select
+          value={cible.ref}
+          onChange={(e) => onChange(cibleReference(e.target.value, options.profil))}
+        >
+          {REFERENCES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {options.modele ? (
+        <span className="texte-discret aide-reference">
+          L’allure sera calculée avec le profil de l’athlète.
+        </span>
+      ) : (
+        <>
+          <label className="champ-court">
+            Allure
+            <ChampTexteValide
+              value={cible.allure_sec}
+              onChange={(allure) =>
+                onChange({
+                  ...cible,
+                  allure_sec: allure,
+                  modifiee: allure !== null && allure !== duProfil,
+                })
+              }
+              formater={formaterChrono}
+              lire={lireChrono}
+              optionnel
+              placeholder="4:30"
+            />
+          </label>
+          <span className="texte-discret aide-reference">
+            {duProfil === null && 'Absente du profil : saisissez l’allure.'}
+            {duProfil !== null && !cible.modifiee && 'Allure du profil.'}
+            {duProfil !== null && cible.modifiee && (
+              <>
+                Modifiée (profil : {formaterChrono(duProfil)}){' '}
+                <button
+                  type="button"
+                  className="btn-lien"
+                  onClick={() => onChange(cibleReference(cible.ref, options.profil))}
+                >
+                  Rétablir
+                </button>
+              </>
+            )}
+          </span>
+        </>
+      )}
+    </>
   );
 }
 

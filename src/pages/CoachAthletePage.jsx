@@ -7,7 +7,7 @@ import DupliquerForm from '../components/DupliquerForm.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
 import NouvelleSeance from '../components/NouvelleSeance.jsx';
-import { ProfilAthleteCoach } from '../components/ProfilSportif.jsx';
+import { ProfilAthleteCoach, useProfil } from '../components/ProfilSportif.jsx';
 import SeanceDetails from '../components/SeanceDetails.jsx';
 import SeanceForm from '../components/SeanceForm.jsx';
 import WeekCalendar, { WeekNav } from '../components/WeekCalendar.jsx';
@@ -20,6 +20,8 @@ export default function CoachAthletePage() {
   const [erreurAthlete, setErreurAthlete] = useState('');
   const [lundi, setLundi] = useState(debutSemaine());
   const { seances, loading, error, recharger } = useSeancesSemaine(lundi, athleteId);
+  // Profil de l'athlète (records, seuils) : affiché, et utilisé pour les allures @10k, @SV1…
+  const { profil, setProfil, erreur: erreurProfil } = useProfil(athleteId);
 
   // Fenêtre ouverte : null ou { mode, seance?, date? }
   // modes : 'creer', 'voir', 'modifier', 'dupliquer'
@@ -122,7 +124,12 @@ export default function CoachAthletePage() {
         </div>
       </div>
 
-      <ProfilAthleteCoach athleteId={athleteId} />
+      <ProfilAthleteCoach
+        athleteId={athleteId}
+        profil={profil}
+        setProfil={setProfil}
+        erreur={erreurProfil}
+      />
       <WeekNav lundi={lundi} onChange={setLundi} />
       <ErrorMessage message={error} />
       <WeekCalendar
@@ -135,7 +142,7 @@ export default function CoachAthletePage() {
 
       {fenetre?.mode === 'creer' && (
         <Modal titre="Nouvelle séance" onClose={fermer} large>
-          <NouvelleSeance date={fenetre.date} onSubmit={creer} onCancel={fermer} />
+          <NouvelleSeance date={fenetre.date} onSubmit={creer} onCancel={fermer} profil={profil} />
         </Modal>
       )}
       {fenetre?.mode === 'voir' && (
@@ -184,6 +191,7 @@ export default function CoachAthletePage() {
             initial={fenetre.seance}
             onSubmit={modifier}
             onCancel={() => voir(fenetre.seance)}
+            profil={profil}
           />
         </Modal>
       )}

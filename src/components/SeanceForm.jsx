@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { SPORTS, SPORTS_AVEC_DPLUS, adapterAuSport, resumerTotaux, totaux } from '../blocs.js';
+import {
+  SPORTS,
+  SPORTS_AVEC_DPLUS,
+  adapterAuSport,
+  resoudreReferences,
+  resumerTotaux,
+  totaux,
+} from '../blocs.js';
 import { TYPES_SEANCE } from '../libelles.js';
 import BlocsEditor from './BlocsEditor.jsx';
 import { ErrorMessage } from './Feedback.jsx';
@@ -7,9 +14,18 @@ import { ErrorMessage } from './Feedback.jsx';
 const SPORTS_CONNUS = SPORTS.map((s) => s.value);
 
 // Formulaire de création / modification d'une séance (coach), avec sa structure en blocs.
-// - avecDate = false pour une séance type de la bibliothèque (sans date)
+// - avecDate = false pour une séance type de la bibliothèque (sans date) : c'est un modèle,
+//   ses allures de référence (@10k…) sont gardées sans valeur
+// - profil : profil de l'athlète, pour calculer les allures de référence
 // - onSubmit reçoit les valeurs et renvoie une promesse ; une erreur est affichée dans le formulaire.
-export default function SeanceForm({ initial, onSubmit, onCancel, avecDate = true }) {
+export default function SeanceForm({
+  initial,
+  onSubmit,
+  onCancel,
+  avecDate = true,
+  profil = null,
+}) {
+  const modele = !avecDate;
   const [valeurs, setValeurs] = useState({
     date: initial.date ?? '',
     titre: initial.titre ?? '',
@@ -23,7 +39,8 @@ export default function SeanceForm({ initial, onSubmit, onCancel, avecDate = tru
     dureePrevueMin: initial.dureePrevueMin ?? '',
     dplusPrevuM: initial.dplusPrevuM ?? '',
     description: initial.description ?? '',
-    blocs: initial.blocs ?? [],
+    // Séance créée depuis un modèle : les références reçoivent l'allure du profil
+    blocs: modele ? (initial.blocs ?? []) : resoudreReferences(initial.blocs ?? [], profil),
   });
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState('');
@@ -111,6 +128,8 @@ export default function SeanceForm({ initial, onSubmit, onCancel, avecDate = tru
           blocs={valeurs.blocs}
           sport={valeurs.sport}
           onChange={(blocs) => setValeurs({ ...valeurs, blocs })}
+          profil={profil}
+          modele={modele}
         />
         {valeurs.blocs.length > 0 && (
           <p className="structure-total">

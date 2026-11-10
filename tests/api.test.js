@@ -8,7 +8,12 @@ import { createApp } from '../server/app.js';
 import { pool } from '../server/db.js';
 import { migrate } from '../server/migrate.js';
 import { loadJwtSecret } from '../server/jwt.js';
-import { estimerBlocs } from '../server/partage/estimation.js';
+import {
+  allureDeReference,
+  estimerBloc,
+  estimerBlocs,
+  resoudreReferences,
+} from '../server/partage/estimation.js';
 
 let server;
 let baseUrl;
@@ -431,6 +436,133 @@ describe('ski-alpinisme et D+', () => {
     ]);
     assert.equal(allure.status, 400);
     assert.equal((await essai('ski_alpi', bloc(800))).status, 201);
+  });
+});
+
+describe('allures de référence et estimation', () => {
+  const PROFIL = {
+    records: [
+      { distance: '10k', tempsSec: 42 * 60 }, // 4:12 /km
+      { distance: 'semi', tempsSec: 3600 + 30 * 60 }, // 5400 s ÷ 21,0975 km
+    ],
+    seuils: { sv1Allure: 300, sv2Allure: 250 },
+  };
+  const ref = (r, allure = null) => ({ type: 'reference', ref: r, allure_sec: allure });
+
+  test('allure calculée depuis les records et les seuils', () => {
+    assert.equal(allureDeReference('10k', PROFIL), 252);
+    assert.equal(allureDeReference('21k', PROFIL), 256); // 255,95 arrondi
+    assert.equal(allureDeReference('sv2', PROFIL), 250);
+    assert.equal(allureDeReference('5k', PROFIL), null); // pas de record sur 5 km
+    assert.equal(allureDeReference('sv1', { records: [], seuils: null }), null);
+  });
+
+  test('estimation : distance d’un bloc en durée, durée d’un bloc en distance', () => {
+    // 10 min à 5:00 /km → 2 km ; 3 km à @10k (4:12) → 756 s
+    assert.equal(
+      estimerBloc({ mesure: 'duree', valeur: 600, cible: ref('sv1', 300) }).distance,
+      2000,
+    );
+    assert.equal(
+      estimerBloc({ mesure: 'distance', valeur: 3000, cible: ref('10k', 252) }).duree,
+      756,
+    );
+    // Fourchette d'allure : on prend le milieu (4:50 – 5:10 → 5:00)
+    const fourchette = { type: 'allure', min: 290, max: 310 };
+    assert.equal(estimerBloc({ mesure: 'duree', valeur: 600, cible: fourchette }).distance, 2000);
+    // Sans allure : la valeur manquante est inconnue
+    assert.equal(
+      estimerBloc({ mesure: 'distance', valeur: 1000, cible: { type: 'zone' } }).duree,
+      null,
+    );
+
+    // Séance : 10 min d'échauffement à 5:00 + 3 × (1 km @10k + 2 min sans cible)
+    const blocs = [
+      { type: 'echauffement', mesure: 'duree', valeur: 600, cible: ref('sv1', 300) },
+      {
+        type: 'repetition',
+        repetitions: 3,
+        blocs: [
+          { type: 'intervalle', mesure: 'distance', valeur: 1000, cible: ref('10k', 252) },
+          { type: 'recuperation', mesure: 'duree', valeur: 120, cible: { type: 'aucune' } },
+        ],
+      },
+    ];
+    const t = estimerBlocs(blocs);
+    assert.equal(t.duree, 600 + 3 * (252 + 120));
+    assert.equal(t.distance, 2000 + 3 * 1000);
+    assert.equal(t.dureeComplete, true);
+    assert.equal(t.distanceComplete, false); // la récupération sans allure
+  });
+
+  test('résolution d’un modèle : seules les références vides prennent l’allure du profil', () => {
+    const blocs = [
+      { type: 'intervalle', mesure: 'duree', valeur: 600, cible: ref('10k') },
+      {
+        type: 'intervalle',
+        mesure: 'duree',
+        valeur: 600,
+        cible: { ...ref('sv1', 280), modifiee: true },
+      },
+    ];
+    const resolus = resoudreReferences(blocs, PROFIL);
+    assert.equal(resolus[0].cible.allure_sec, 252);
+    assert.equal(resolus[1].cible.allure_sec, 280);
+    assert.equal(resolus[1].cible.modifiee, true);
+  });
+
+  test('séance : l’allure manquante est prise dans le profil, sinon le coach doit la saisir', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    await api('profil/records', {
+      method: 'PUT',
+      token: athlete.token,
+      body: { records: [{ distance: '10k', tempsSec: 42 * 60 }] },
+    });
+    const creer = (blocs) =>
+      api('seances', {
+        method: 'POST',
+        token: coach.token,
+        body: { ...SEANCE, athleteId: athlete.user.id, blocs },
+      });
+    const bloc = (cible) => [{ type: 'intervalle', mesure: 'distance', valeur: 2000, cible }];
+
+    const depuisProfil = await creer(bloc(ref('10k')));
+    assert.equal(depuisProfil.status, 201);
+    assert.deepEqual(depuisProfil.body.blocs[0].cible, { ...ref('10k', 252), modifiee: false });
+
+    // Allure modifiée par le coach : conservée telle quelle
+    const modifiee = await creer(bloc({ ...ref('10k', 245), modifiee: true }));
+    assert.equal(modifiee.body.blocs[0].cible.allure_sec, 245);
+    assert.equal(modifiee.body.blocs[0].cible.modifiee, true);
+
+    // Pas de seuil SV2 dans le profil : 400 avec un message clair
+    const absente = await creer(bloc(ref('sv2')));
+    assert.equal(absente.status, 400);
+    assert.match(absente.body.error, /@SV2/);
+
+    // Référence inconnue, ou allure de référence à vélo : refusées
+    assert.equal((await creer(bloc(ref('15k', 250)))).status, 400);
+    const velo = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, sport: 'velo', athleteId: athlete.user.id, blocs: bloc(ref('10k', 250)) },
+    });
+    assert.equal(velo.status, 400);
+  });
+
+  test('un modèle garde la référence sans allure fixe', async () => {
+    const coach = await creerCompte('coach');
+    const { date: _date, ...modele } = SEANCE;
+    const res = await api('seances-types', {
+      method: 'POST',
+      token: coach.token,
+      body: {
+        ...modele,
+        blocs: [{ type: 'intervalle', mesure: 'distance', valeur: 400, cible: ref('5k', 230) }],
+      },
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(res.body.blocs[0].cible, { ...ref('5k'), modifiee: false });
   });
 });
 

@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/seances-types : enregistrer un modèle
 router.post('/', async (req, res) => {
-  const s = lireContenuSeance(req.body);
+  const s = lireContenuSeance(req.body, { modele: true });
   const { rows } = await pool.query(
     `INSERT INTO seances_types
        (coach_id, titre, sport, type, duree_prevue_min, description, blocs, dplus_prevu_m)
@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
       s.type,
       s.dureePrevueMin,
       s.description,
-      s.blocs,
+      JSON.stringify(s.blocs),
       s.dplusPrevuM,
     ],
   );
@@ -47,7 +47,7 @@ router.post('/', async (req, res) => {
 // PUT /api/seances-types/:id : modifier un de ses modèles
 router.put('/:id', async (req, res) => {
   const id = valider.identifiant(req.params.id);
-  const s = lireContenuSeance(req.body);
+  const s = lireContenuSeance(req.body, { modele: true });
   const { rows } = await pool.query(
     `UPDATE seances_types
      SET titre = $1, sport = $2, type = $3, duree_prevue_min = $4, description = $5, blocs = $6,
@@ -60,7 +60,7 @@ router.put('/:id', async (req, res) => {
       s.type,
       s.dureePrevueMin,
       s.description,
-      s.blocs,
+      JSON.stringify(s.blocs),
       s.dplusPrevuM,
       id,
       req.user.id,

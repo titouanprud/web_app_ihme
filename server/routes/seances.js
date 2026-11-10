@@ -4,8 +4,9 @@ import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
 import { verifierAthleteDuCoach } from '../liens.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
-import { estimerBlocs } from '../partage/estimation.js';
+import { estimerBlocs, referencesSansAllure, resoudreReferences } from '../partage/estimation.js';
 import * as valider from '../validation.js';
+import { lireProfil } from './profil.js';
 
 const router = Router();
 
@@ -54,16 +55,17 @@ function lireDplus(body, sport, blocs) {
   });
 }
 
-// Contenu d'une séance sans la date (réutilisé pour la bibliothèque de séances types).
-// Les blocs sont convertis en texte JSON pour la colonne JSONB.
-export function lireContenuSeance(body = {}) {
+// Contenu d'une séance sans la date (réutilisé pour la bibliothèque de séances types :
+// modele = true). Les blocs restent une liste ; on les convertit en texte JSON
+// (JSON.stringify) au moment de les écrire dans la colonne JSONB.
+export function lireContenuSeance(body = {}, { modele = false } = {}) {
   const sport = valider.choix(body.sport, 'Le sport', SPORTS);
-  const blocs = validerBlocs(body.blocs, sport);
+  const blocs = validerBlocs(body.blocs, sport, { modele });
   return {
     titre: valider.texte(body.titre, 'Le titre', { max: 100 }),
     sport,
     type: valider.choix(body.type, 'Le type', TYPES_SEANCE),
-    blocs: JSON.stringify(blocs),
+    blocs,
     dplusPrevuM: lireDplus(body, sport, blocs),
     dureePrevueMin: valider.entier(body.dureePrevueMin, 'La durée prévue', {
       min: 0,
@@ -75,6 +77,30 @@ export function lireContenuSeance(body = {}) {
       optionnel: true,
     }),
   };
+}
+
+const LIBELLES_REFERENCE = {
+  '5k': '@5k',
+  '10k': '@10k',
+  '21k': '@21k',
+  '42k': '@42k',
+  sv1: '@SV1',
+  sv2: '@SV2',
+};
+
+// Les allures de référence encore vides (ex. séance créée depuis un modèle) sont calculées
+// avec le profil de l'athlète. Si le profil ne contient pas la valeur, le coach doit la saisir.
+export async function completerAllures(blocs, athleteId) {
+  if (referencesSansAllure(blocs).length === 0) return blocs;
+  const resolus = resoudreReferences(blocs, await lireProfil(athleteId));
+  const manquantes = referencesSansAllure(resolus).map((ref) => LIBELLES_REFERENCE[ref]);
+  if (manquantes.length > 0) {
+    throw new HttpError(
+      400,
+      `Allure ${manquantes.join(', ')} absente du profil de l’athlète : saisissez-la dans le bloc.`,
+    );
+  }
+  return resolus;
 }
 
 // GET /api/seances?athleteId=&from=&to= : séances sur une période
@@ -111,6 +137,7 @@ router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
   const athleteId = valider.identifiant(req.body?.athleteId, "L'athlète");
   const s = lireSeance(req.body);
   await verifierAthleteDuCoach(req.user.id, athleteId);
+  const blocs = await completerAllures(s.blocs, athleteId);
 
   const { rows } = await pool.query(
     `INSERT INTO seances
@@ -127,7 +154,7 @@ router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
       s.type,
       s.dureePrevueMin,
       s.description,
-      s.blocs,
+      JSON.stringify(blocs),
       s.dplusPrevuM,
     ],
   );
@@ -138,6 +165,15 @@ router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
 router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   const id = valider.identifiant(req.params.id);
   const s = lireSeance(req.body);
+
+  // L'athlète de la séance sert à compléter les allures de référence avec son profil.
+  // La condition coach_id garantit qu'un coach ne modifie que ses propres séances.
+  const existante = await pool.query(
+    'SELECT athlete_id FROM seances WHERE id = $1 AND coach_id = $2',
+    [id, req.user.id],
+  );
+  if (!existante.rows[0]) throw new HttpError(404, 'Séance introuvable.');
+  const blocs = await completerAllures(s.blocs, existante.rows[0].athlete_id);
 
   // La condition coach_id = $10 garantit qu'un coach ne modifie que ses propres séances.
   const { rowCount } = await pool.query(
@@ -152,7 +188,7 @@ router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
       s.type,
       s.dureePrevueMin,
       s.description,
-      s.blocs,
+      JSON.stringify(blocs),
       s.dplusPrevuM,
       id,
       req.user.id,
