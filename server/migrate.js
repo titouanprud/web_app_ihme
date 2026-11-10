@@ -135,6 +135,28 @@ CREATE TABLE IF NOT EXISTS cycles (
 );
 CREATE INDEX IF NOT EXISTS cycles_athlete_dates_idx ON cycles (athlete_id, date_debut);
 
+-- Propositions de l'athlète pour changer une séance prévue (date ou contenu).
+-- changements (JSONB) : seulement les champs modifiés, ex. { "date": "2026-11-12" }.
+-- La séance ne change que lorsque le coach accepte.
+CREATE TABLE IF NOT EXISTS propositions_seance (
+  id            SERIAL PRIMARY KEY,
+  seance_id     INTEGER NOT NULL REFERENCES seances(id) ON DELETE CASCADE,
+  athlete_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  coach_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  changements   JSONB NOT NULL,
+  message       TEXT NOT NULL DEFAULT '',
+  statut        TEXT NOT NULL DEFAULT 'en_attente'
+                CHECK (statut IN ('en_attente', 'acceptee', 'refusee')),
+  reponse       TEXT NOT NULL DEFAULT '',
+  date_creation TIMESTAMPTZ NOT NULL DEFAULT now(),
+  date_reponse  TIMESTAMPTZ
+);
+-- Index unique "partiel" : au plus UNE proposition en attente par séance
+-- (les propositions acceptées ou refusées, elles, peuvent être nombreuses).
+CREATE UNIQUE INDEX IF NOT EXISTS propositions_une_en_attente_idx
+  ON propositions_seance (seance_id) WHERE statut = 'en_attente';
+CREATE INDEX IF NOT EXISTS propositions_coach_idx ON propositions_seance (coach_id, statut);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   cle    TEXT PRIMARY KEY,
   valeur TEXT NOT NULL

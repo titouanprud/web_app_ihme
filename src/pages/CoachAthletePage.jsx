@@ -271,6 +271,12 @@ export default function CoachAthletePage({ moi = false }) {
       {fenetre?.mode === 'voir' && (
         <Modal titre={fenetre.seance.titre} onClose={fermer}>
           <SeanceDetails seance={fenetre.seance} />
+          {fenetre.seance.proposition?.statut === 'en_attente' && (
+            <p className="alerte-proposition">
+              ✎ L’athlète propose une modification de cette séance.{' '}
+              <Link to="/coach/propositions">Voir la proposition</Link>
+            </p>
+          )}
           {moi && (
             <RetourForm key={fenetre.seance.id} seance={fenetre.seance} onSubmit={envoyerRetour} />
           )}

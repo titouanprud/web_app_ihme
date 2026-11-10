@@ -1081,6 +1081,162 @@ describe('cycles', () => {
   });
 });
 
+describe('propositions de modification', () => {
+  // Crée un binôme et une séance prévue pour l'athlète
+  async function preparer() {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const seance = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: athlete.user.id, description: 'Tranquille' },
+    });
+    const proposer = (body, token = athlete.token) =>
+      api('propositions', { method: 'POST', token, body: { seanceId: seance.body.id, ...body } });
+    return { coach, athlete, seance: seance.body, proposer };
+  }
+
+  test('la séance ne change qu’après l’acceptation du coach', async () => {
+    const { coach, athlete, seance, proposer } = await preparer();
+    const proposition = await proposer({
+      // Le titre est identique : il n'est pas gardé dans les changements
+      changements: { date: '2026-10-30', titre: SEANCE.titre },
+      message: 'Je travaille tard mercredi',
+    });
+    assert.equal(proposition.status, 201);
+    assert.deepEqual(proposition.body.changements, { date: '2026-10-30' });
+
+    // Avant la réponse : séance inchangée, marquée "proposition en attente"
+    const periode = `athleteId=${athlete.user.id}&from=2026-10-26&to=2026-11-01`;
+    const avant = (await api(`seances?${periode}`, { token: coach.token })).body[0];
+    assert.equal(avant.date, SEANCE.date);
+    assert.equal(avant.proposition.statut, 'en_attente');
+    assert.equal(
+      (await api('notifications', { token: coach.token })).body.propositionsEnAttente,
+      1,
+    );
+
+    const liste = await api('propositions', { token: coach.token });
+    assert.equal(liste.body.length, 1);
+    assert.equal(liste.body[0].seance.date, SEANCE.date); // pour la comparaison avant / après
+
+    const acceptee = await api(`propositions/${proposition.body.id}/accepter`, {
+      method: 'POST',
+      token: coach.token,
+      body: { reponse: 'OK pour vendredi' },
+    });
+    assert.equal(acceptee.status, 200);
+    assert.equal(acceptee.body.date, '2026-10-30');
+    assert.equal(acceptee.body.proposition.statut, 'acceptee');
+    assert.equal(acceptee.body.description, 'Tranquille'); // le reste ne change pas
+    assert.equal(
+      (await api('notifications', { token: coach.token })).body.propositionsEnAttente,
+      0,
+    );
+
+    // Déjà traitée : on ne peut plus l'accepter ni la refuser
+    const encore = await api(`propositions/${proposition.body.id}/refuser`, {
+      method: 'POST',
+      token: coach.token,
+    });
+    assert.equal(encore.status, 404);
+    assert.equal(seance.id, acceptee.body.id);
+  });
+
+  test('refus avec un message, une seule proposition en attente, annulation', async () => {
+    const { coach, athlete, proposer } = await preparer();
+    const premiere = await proposer({ changements: { titre: 'Footing court' } });
+    assert.equal(premiere.status, 201);
+    assert.equal((await proposer({ changements: { titre: 'Autre idée' } })).status, 409);
+
+    // L'athlète annule, puis en propose une nouvelle, que le coach refuse
+    const annulation = await api(`propositions/${premiere.body.id}`, {
+      method: 'DELETE',
+      token: athlete.token,
+    });
+    assert.equal(annulation.status, 204);
+    const seconde = await proposer({ changements: { titre: 'Footing court' } });
+    assert.equal(seconde.status, 201);
+    const refus = await api(`propositions/${seconde.body.id}/refuser`, {
+      method: 'POST',
+      token: coach.token,
+      body: { reponse: 'On garde la séance prévue' },
+    });
+    assert.equal(refus.body.titre, SEANCE.titre);
+    assert.equal(refus.body.proposition.statut, 'refusee');
+    assert.equal(refus.body.proposition.reponse, 'On garde la séance prévue');
+    // Une proposition refusée ne s'annule plus
+    const tard = await api(`propositions/${seconde.body.id}`, {
+      method: 'DELETE',
+      token: athlete.token,
+    });
+    assert.equal(tard.status, 404);
+  });
+
+  test('changements vérifiés comme une séance', async () => {
+    const { proposer } = await preparer();
+    assert.equal((await proposer({ changements: { date: '2026-02-31' } })).status, 400);
+    assert.equal((await proposer({ changements: { sport: 'velo' } })).status, 400); // non modifiable
+    assert.equal((await proposer({ changements: {} })).status, 400); // aucun changement
+    const blocs = [
+      { type: 'intervalle', mesure: 'duree', valeur: 600, cible: { type: 'puissance', min: 200 } },
+    ];
+    assert.equal((await proposer({ changements: { blocs } })).status, 400); // puissance en course
+
+    // Nouvelle structure valide : la durée prévue est recalculée à l'acceptation
+    const valides = [
+      { type: 'intervalle', mesure: 'duree', valeur: 1800, cible: { type: 'zone', min: 2 } },
+    ];
+    assert.equal((await proposer({ changements: { blocs: valides } })).status, 201);
+  });
+
+  test('droits : séance d’un autre, séance réalisée, coach pour lui-même', async () => {
+    const { coach, athlete, seance, proposer } = await preparer();
+    const autre = await creerCoachEtAthlete();
+
+    // Un autre athlète ne peut pas proposer sur cette séance ; un coach non plus
+    assert.equal(
+      (await proposer({ changements: { titre: 'X' } }, autre.athlete.token)).status,
+      404,
+    );
+    assert.equal((await proposer({ changements: { titre: 'X' } }, coach.token)).status, 403);
+
+    const proposition = await proposer({ changements: { titre: 'Footing court' } });
+    // Un autre coach ne peut ni lire, ni accepter
+    assert.deepEqual((await api('propositions', { token: autre.coach.token })).body, []);
+    const parAutre = await api(`propositions/${proposition.body.id}/accepter`, {
+      method: 'POST',
+      token: autre.coach.token,
+    });
+    assert.equal(parAutre.status, 404);
+    assert.equal(
+      (
+        await api(`propositions/${proposition.body.id}`, {
+          method: 'DELETE',
+          token: autre.athlete.token,
+        })
+      ).status,
+      404,
+    );
+
+    // La séance est réalisée entre-temps : le coach ne peut plus accepter, ni l'athlète proposer
+    await api(`seances/${seance.id}/retour`, {
+      method: 'POST',
+      token: athlete.token,
+      body: { statut: 'realisee', difficulte: 5, forme: 5 },
+    });
+    const tardive = await api(`propositions/${proposition.body.id}/accepter`, {
+      method: 'POST',
+      token: coach.token,
+    });
+    assert.equal(tardive.status, 409);
+    await api(`propositions/${proposition.body.id}/refuser`, {
+      method: 'POST',
+      token: coach.token,
+    });
+    assert.equal((await proposer({ changements: { titre: 'Encore' } })).status, 409);
+  });
+});
+
 describe('entraînement du coach', () => {
   const periode = 'from=2026-10-26&to=2026-11-01';
 

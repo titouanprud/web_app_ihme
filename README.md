@@ -42,6 +42,7 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Lire les retours des athlètes.
 - Consulter les records de ses athlètes et saisir son estimation de leurs seuils **SV1 / SV2** (allure et FC).
 - **Cycles** de plusieurs semaines (préparation générale, spécifique, affûtage, récupération, compétition, autre) pour ses athlètes et pour lui-même : nom, dates (du lundi au dimanche), objectif, couleur. Deux cycles du même athlète ne se chevauchent pas. Un bandeau coloré les montre dans le calendrier ; un clic affiche l'objectif et les totaux du cycle.
+- **Propositions** : voir les modifications proposées par les athlètes (compteur dans la navigation, liste dédiée, marque ✎ sur la séance dans le calendrier), avec une comparaison avant / après ; les accepter (la séance est modifiée) ou les refuser avec un message.
 - **Mon entraînement** : le coach se planifie des séances (sans validation), a son propre profil sportif (records, seuils) et fait le retour de ses séances.
 
 **Athlète**
@@ -52,6 +53,7 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Renseigner ses records sur 5 km, 10 km, semi-marathon et marathon.
 - Voir ses allures SV1 / SV2 estimées par son coach (sans pouvoir les modifier).
 - Voir ses cycles d'entraînement (objectif et totaux), sans pouvoir les modifier.
+- **Proposer une modification** d'une séance prévue (date, titre, consignes, structure, D+) avec un message ; suivre son statut et l'annuler tant qu'elle est en attente. La séance ne change que si le coach accepte.
 
 ### Version 2 (si le temps le permet)
 - Vue mois du calendrier.
@@ -119,6 +121,7 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 - **records** : athlete_id → users, distance (`5k` | `10k` | `semi` | `marathon`), temps_sec, date_record
 - **seuils** : athlete_id → users, sv1_allure_sec, sv1_fc, sv2_allure_sec, sv2_fc, date_maj
 - **cycles** : id, coach_id → users, athlete_id → users, nom, type (`preparation_generale` | `specifique` | `affutage` | `recuperation` | `competition` | `autre`), date_debut (un lundi), date_fin (un dimanche), objectif, couleur (`#RRVVBB`)
+- **propositions_seance** : id, seance_id → seances, athlete_id → users, coach_id → users, changements (JSONB : seulement les champs modifiés), message, statut (`en_attente` | `acceptee` | `refusee`), reponse (du coach), date_creation, date_reponse. Index unique partiel : au plus une proposition en attente par séance.
 - **app_settings** : clé, valeur (sert à stocker le secret JWT généré au premier démarrage si la variable `JWT_SECRET` n'existe pas, car le serveur du cours ne fournit que `DATABASE_URL`)
 
 ## 7. API (première version)
@@ -137,7 +140,7 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | POST | `/api/demandes/:athleteId/refuser` | coach | Refuser une demande |
 | GET | `/api/messages?athleteId=` | coach / athlète | Conversation du binôme (marque les messages reçus comme lus) |
 | POST | `/api/messages` | coach / athlète | Envoyer un message |
-| GET | `/api/notifications` | connecté | Compteurs : messages non lus, demandes en attente |
+| GET | `/api/notifications` | connecté | Compteurs : messages non lus, demandes et propositions en attente |
 | GET | `/api/athletes` | coach | Liste de ses athlètes |
 | GET | `/api/seances?athleteId=&from=&to=` | coach / athlète | Séances sur une période (400 jours maximum) |
 | GET | `/api/seances/totaux?athleteId=&from=&to=&groupe=semaine\|mois` | coach / athlète | Totaux du prévu par semaine ou par mois (une seule requête SQL agrégée) |
@@ -151,6 +154,11 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | POST | `/api/seances-types` | coach | Ajouter un modèle |
 | PUT | `/api/seances-types/:id` | coach | Modifier un modèle |
 | DELETE | `/api/seances-types/:id` | coach | Supprimer un modèle |
+| GET | `/api/propositions?statut=en_attente\|toutes` | coach / athlète | Propositions reçues (coach) ou envoyées (athlète), avec la séance actuelle |
+| POST | `/api/propositions` | athlète | Proposer des changements sur une de ses séances prévues |
+| POST | `/api/propositions/:id/accepter` | coach | Appliquer les changements (transaction) |
+| POST | `/api/propositions/:id/refuser` | coach | Refuser avec un message |
+| DELETE | `/api/propositions/:id` | athlète | Annuler sa proposition en attente |
 | GET | `/api/profil?athleteId=` | coach / athlète | Records et seuils d'un athlète |
 | PUT | `/api/profil/records` | connecté | Enregistrer ses propres records (athlète, ou coach pour lui-même) |
 | GET | `/api/cycles?athleteId=&from=&to=` | coach / athlète | Cycles qui touchent la période |
@@ -244,6 +252,7 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 - **Glisser-déposer** avec `@dnd-kit/core` plutôt que le glisser-déposer natif du navigateur, qui ne fonctionne pas au doigt. Principe : `<DndContext>` (page de planification) suit le pointeur et appelle `onDragEnd({ active, over })` quand on lâche ; `useDraggable` rend un modèle ou une séance déplaçable, `useDroppable` fait de chaque jour une zone de dépôt ; chacun porte des `data` (le modèle, la séance, la date). Le jour visé est celui sous le pointeur (`pointerWithin`). À la souris, le déplacement démarre après 6 px (un clic ouvre toujours la séance) ; au doigt, après un appui de 200 ms (un glissement rapide fait défiler la page). Déplacer une séance = la même modification qu'avec le formulaire (`PUT`), avec la nouvelle date.
 - **Catalogue de départ** (`server/catalogueDepart.js`) : ajouté à la création d'un compte coach, ou au premier affichage du catalogue pour les coachs existants. La colonne `users.catalogue_initialise` est passée à `true` dans la même transaction : un coach qui supprime ces modèles ne les voit pas revenir.
 - **Cycles** : le lundi / dimanche est vérifié par la route et par une contrainte `CHECK` (`EXTRACT(ISODOW …)`). Le non-chevauchement est vérifié par une requête dans une transaction, protégée par `pg_advisory_xact_lock(athlete_id)` pour que deux enregistrements simultanés ne passent pas tous les deux (une contrainte d'exclusion PostgreSQL demanderait l'extension `btree_gist`, peut-être absente sur le serveur du cours). Un cycle dure au plus 52 semaines. Dans le formulaire, les dates choisies sont ramenées au lundi et au dimanche de leur semaine.
+- **Propositions** : les changements reçus sont fusionnés avec la séance actuelle puis vérifiés par la même fonction qu'une séance du coach (`lireSeance`) ; on ne garde que les champs qui changent vraiment (comparaison sans tenir compte de l'ordre des clés, que PostgreSQL réorganise en JSONB). L'acceptation verrouille la proposition et la séance (`SELECT … FOR UPDATE`) dans une transaction. Si la structure change, la durée prévue est recalculée à partir des blocs. Une séance réalisée ou non réalisée ne peut plus faire l'objet d'une proposition ni d'une acceptation ; le coach, lui, garde la main sur ses séances avec le formulaire habituel. Les séances du coach pour lui-même ne passent pas par ce circuit (la route est réservée aux athlètes).
 - **Code partagé** : les calculs sur les blocs (durée, distance, D+) sont dans `server/partage/estimation.js`, importé par le serveur et par React (`src/blocs.js`). Le fichier est rangé dans `server/` car le Dockerfile de production ne copie que ce dossier.
 
 ## 13. Questions ouvertes

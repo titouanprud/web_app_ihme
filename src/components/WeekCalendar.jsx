@@ -26,7 +26,14 @@ function BoutonSeance({ seance: s, onOuvrir, mini }) {
       onClick={() => onOuvrir(s)}
       title={mini ? `${s.titre} · ${libelleSport(s.sport)}` : undefined}
     >
-      <span className="carte-titre">{s.titre}</span>
+      <span className="carte-titre">
+        {s.proposition?.statut === 'en_attente' && (
+          <span className="marque-proposition" title="Proposition de modification en attente">
+            ✎{' '}
+          </span>
+        )}
+        {s.titre}
+      </span>
       {mini ? (
         <span className="carte-infos">
           {libelleSport(s.sport)}

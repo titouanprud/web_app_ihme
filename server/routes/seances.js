@@ -29,12 +29,24 @@ const SELECT_SEANCE = `
                 'forme', r.forme,
                 'commentaire', r.commentaire,
                 'date', r.date)
-         END AS retour
+         END AS retour,
+         prop.proposition
   FROM seances s
-  LEFT JOIN retours r ON r.seance_id = s.id`;
+  LEFT JOIN retours r ON r.seance_id = s.id
+  -- Dernière proposition de l'athlète sur la séance (null s'il n'y en a pas)
+  LEFT JOIN LATERAL (
+    SELECT json_build_object(
+             'id', p.id, 'statut', p.statut, 'changements', p.changements,
+             'message', p.message, 'reponse', p.reponse,
+             'dateCreation', p.date_creation, 'dateReponse', p.date_reponse) AS proposition
+    FROM propositions_seance p
+    WHERE p.seance_id = s.id
+    ORDER BY p.id DESC
+    LIMIT 1
+  ) prop ON true`;
 
-export async function trouverSeance(id) {
-  const { rows } = await pool.query(`${SELECT_SEANCE} WHERE s.id = $1`, [id]);
+export async function trouverSeance(id, db = pool) {
+  const { rows } = await db.query(`${SELECT_SEANCE} WHERE s.id = $1`, [id]);
   return rows[0];
 }
 

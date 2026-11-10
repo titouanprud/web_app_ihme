@@ -27,6 +27,13 @@ export default function Layout() {
                       libelle="nouveautés"
                     />
                   </NavLink>
+                  <NavLink to="/coach/propositions">
+                    Propositions
+                    <Compteur
+                      nombre={notifs?.propositionsEnAttente}
+                      libelle="propositions en attente"
+                    />
+                  </NavLink>
                   <NavLink to="/coach/mon-entrainement">Mon entraînement</NavLink>
                   <NavLink to="/bibliotheque">Catalogue</NavLink>
                 </>

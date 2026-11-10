@@ -107,7 +107,7 @@ function Pastille({ seance: s, onOuvrir }) {
   return (
     <button
       type="button"
-      className={`pastille sport-${s.sport} statut-${s.statut}`}
+      className={`pastille sport-${s.sport} statut-${s.statut}${s.proposition?.statut === 'en_attente' ? ' avec-proposition' : ''}`}
       title={detail}
       aria-label={detail}
       onClick={() => onOuvrir(s)}

@@ -6,6 +6,8 @@ import Calendrier from '../components/Calendrier.jsx';
 import { CycleDetails } from '../components/Cycles.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
+import { useProfil } from '../components/ProfilSportif.jsx';
+import { PropositionForm, SuiviProposition } from '../components/Propositions.jsx';
 import RetourForm from '../components/RetourForm.jsx';
 import SeanceDetails from '../components/SeanceDetails.jsx';
 
@@ -21,6 +23,9 @@ export default function AthletePage() {
 
 function MonCalendrier({ coach }) {
   const [ouverte, setOuverte] = useState(null);
+  const [proposer, setProposer] = useState(false); // formulaire de proposition affiché
+  // Son profil : pour les allures de référence (@10k…) s'il propose une nouvelle structure
+  const { profil } = useProfil();
   const [cycleOuvert, setCycleOuvert] = useState(null); // lecture seule pour l'athlète
   // Augmentée après un retour : le calendrier se recharge
   const [version, setVersion] = useState(0);
@@ -31,6 +36,36 @@ function MonCalendrier({ coach }) {
     setVersion((v) => v + 1);
   }
 
+  const ouvrir = (seance) => {
+    setOuverte(seance);
+    setProposer(false);
+  };
+
+  // Proposition de modification : la séance ne change pas tant que le coach n'a pas accepté
+  async function envoyerProposition({ changements, message }) {
+    const proposition = await api('propositions', {
+      method: 'POST',
+      body: { seanceId: ouverte.id, changements, message },
+    });
+    setOuverte({ ...ouverte, proposition: { ...proposition, message, reponse: '' } });
+    setProposer(false);
+    setVersion((v) => v + 1);
+  }
+
+  async function annulerProposition() {
+    if (!window.confirm('Annuler votre proposition ?')) return;
+    try {
+      await api(`propositions/${ouverte.proposition.id}`, { method: 'DELETE' });
+      setOuverte({ ...ouverte, proposition: null });
+      setVersion((v) => v + 1);
+    } catch (err) {
+      window.alert(err.message);
+    }
+  }
+
+  // Une proposition est possible sur une séance prévue, sans autre proposition en attente
+  const peutProposer = ouverte?.statut === 'prevue' && ouverte.proposition?.statut !== 'en_attente';
+
   return (
     <div className="page">
       <div className="page-entete">
@@ -39,16 +74,36 @@ function MonCalendrier({ coach }) {
           Coach : {coach.prenom} {coach.nom} · <Link to="/athlete/messages">Lui écrire</Link>
         </span>
       </div>
-      <Calendrier version={version} onOuvrir={setOuverte} onOuvrirCycle={setCycleOuvert} />
+      <Calendrier version={version} onOuvrir={ouvrir} onOuvrirCycle={setCycleOuvert} />
 
       {cycleOuvert && (
         <Modal titre={cycleOuvert.nom} onClose={() => setCycleOuvert(null)}>
           <CycleDetails cycle={cycleOuvert} />
         </Modal>
       )}
-      {ouverte && (
+      {ouverte && proposer && (
+        <Modal
+          titre={`Proposer une modification · ${ouverte.titre}`}
+          onClose={() => setProposer(false)}
+          large
+        >
+          <PropositionForm
+            seance={ouverte}
+            profil={profil}
+            onSubmit={envoyerProposition}
+            onCancel={() => setProposer(false)}
+          />
+        </Modal>
+      )}
+      {ouverte && !proposer && (
         <Modal titre={ouverte.titre} onClose={() => setOuverte(null)}>
           <SeanceDetails seance={ouverte} />
+          <SuiviProposition seance={ouverte} onAnnuler={annulerProposition} />
+          {peutProposer && (
+            <button type="button" className="btn btn-ghost" onClick={() => setProposer(true)}>
+              Proposer une modification (date, contenu)
+            </button>
+          )}
           {/* key : réinitialise le formulaire quand on change de séance */}
           <RetourForm key={ouverte.id} seance={ouverte} onSubmit={envoyerRetour} />
         </Modal>

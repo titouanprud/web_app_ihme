@@ -10,6 +10,7 @@ import CoachDashboard from './pages/CoachDashboard.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import { AthleteMessagesPage, CoachMessagesPage } from './pages/MessagesPage.jsx';
 import ProfilPage from './pages/ProfilPage.jsx';
+import PropositionsPage from './pages/PropositionsPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 
 // Page d'accueil : envoie vers l'espace coach, l'espace athlète ou la connexion.
@@ -57,6 +58,14 @@ export default function App() {
           element={
             <RequireRole role="coach">
               <CoachAthletePage moi />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/coach/propositions"
+          element={
+            <RequireRole role="coach">
+              <PropositionsPage />
             </RequireRole>
           }
         />
