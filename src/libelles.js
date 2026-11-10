@@ -34,3 +34,28 @@ export function dureeSeanceMin(seance) {
   }
   return seance.dureeEstimeeSec > 0 ? Math.round(seance.dureeEstimeeSec / 60) : null;
 }
+
+export const TYPES_CYCLE = [
+  { value: 'preparation_generale', label: 'Préparation générale' },
+  { value: 'specifique', label: 'Spécifique' },
+  { value: 'affutage', label: 'Affûtage' },
+  { value: 'recuperation', label: 'Récupération' },
+  { value: 'competition', label: 'Compétition' },
+  { value: 'autre', label: 'Autre' },
+];
+
+export function libelleTypeCycle(type) {
+  return TYPES_CYCLE.find((t) => t.value === type)?.label ?? type;
+}
+
+// Couleurs proposées pour les bandeaux de cycle
+export const COULEURS_CYCLE = [
+  '#2563eb',
+  '#16a34a',
+  '#ea580c',
+  '#dc2626',
+  '#7c3aed',
+  '#0891b2',
+  '#ca8a04',
+  '#64748b',
+];

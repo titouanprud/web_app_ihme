@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Calendrier from '../components/Calendrier.jsx';
+import { CycleDetails } from '../components/Cycles.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
 import RetourForm from '../components/RetourForm.jsx';
@@ -20,6 +21,7 @@ export default function AthletePage() {
 
 function MonCalendrier({ coach }) {
   const [ouverte, setOuverte] = useState(null);
+  const [cycleOuvert, setCycleOuvert] = useState(null); // lecture seule pour l'athlète
   // Augmentée après un retour : le calendrier se recharge
   const [version, setVersion] = useState(0);
 
@@ -37,8 +39,13 @@ function MonCalendrier({ coach }) {
           Coach : {coach.prenom} {coach.nom} · <Link to="/athlete/messages">Lui écrire</Link>
         </span>
       </div>
-      <Calendrier version={version} onOuvrir={setOuverte} />
+      <Calendrier version={version} onOuvrir={setOuverte} onOuvrirCycle={setCycleOuvert} />
 
+      {cycleOuvert && (
+        <Modal titre={cycleOuvert.nom} onClose={() => setCycleOuvert(null)}>
+          <CycleDetails cycle={cycleOuvert} />
+        </Modal>
+      )}
       {ouverte && (
         <Modal titre={ouverte.titre} onClose={() => setOuverte(null)}>
           <SeanceDetails seance={ouverte} />

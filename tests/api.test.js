@@ -962,6 +962,125 @@ describe('calendrier et totaux', () => {
   });
 });
 
+describe('cycles', () => {
+  // Du lundi 5 octobre au dimanche 1er novembre 2026 (4 semaines)
+  const CYCLE = {
+    nom: 'Prépa générale',
+    type: 'preparation_generale',
+    dateDebut: '2026-10-05',
+    dateFin: '2026-11-01',
+    objectif: 'Construire le volume',
+    couleur: '#16a34a',
+  };
+
+  test('le coach crée un cycle, l’athlète le voit sans pouvoir le modifier', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const cree = await api('cycles', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...CYCLE, athleteId: athlete.user.id },
+    });
+    assert.equal(cree.status, 201);
+    assert.equal(cree.body.dateDebut, '2026-10-05');
+
+    const vu = await api('cycles?from=2026-10-26&to=2026-11-01', { token: athlete.token });
+    assert.equal(vu.body.length, 1);
+    assert.equal(vu.body[0].objectif, 'Construire le volume');
+    // Période sans cycle
+    const avant = await api('cycles?from=2026-09-01&to=2026-09-30', { token: athlete.token });
+    assert.deepEqual(avant.body, []);
+
+    const chemin = `cycles/${cree.body.id}`;
+    const parAthlete = await api('cycles', {
+      method: 'POST',
+      token: athlete.token,
+      body: { ...CYCLE, athleteId: athlete.user.id },
+    });
+    assert.equal(parAthlete.status, 403);
+    assert.equal(
+      (await api(chemin, { method: 'PUT', token: athlete.token, body: CYCLE })).status,
+      403,
+    );
+    assert.equal((await api(chemin, { method: 'DELETE', token: athlete.token })).status, 403);
+  });
+
+  test('dates : un lundi et un dimanche, sans chevauchement', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const creer = (cycle) =>
+      api('cycles', {
+        method: 'POST',
+        token: coach.token,
+        body: { ...CYCLE, athleteId: athlete.user.id, ...cycle },
+      });
+    assert.equal((await creer({ dateDebut: '2026-10-06' })).status, 400); // un mardi
+    assert.equal((await creer({ dateFin: '2026-10-31' })).status, 400); // un samedi
+    assert.equal((await creer({ couleur: 'vert' })).status, 400);
+    assert.equal((await creer({ type: 'sieste' })).status, 400);
+
+    const premier = await creer({});
+    assert.equal(premier.status, 201);
+    // Chevauche la dernière semaine du premier cycle
+    const chevauche = await creer({ dateDebut: '2026-10-26', dateFin: '2026-11-08' });
+    assert.equal(chevauche.status, 409);
+    // Commence le lundi qui suit : accepté
+    const suivant = await creer({
+      nom: 'Affûtage',
+      dateDebut: '2026-11-02',
+      dateFin: '2026-11-15',
+    });
+    assert.equal(suivant.status, 201);
+
+    // Modifier le second pour empiéter sur le premier : refusé ; le modifier sans conflit : accepté
+    const chemin = `cycles/${suivant.body.id}`;
+    const empiete = await api(chemin, {
+      method: 'PUT',
+      token: coach.token,
+      body: { ...CYCLE, dateDebut: '2026-10-19', dateFin: '2026-11-15' },
+    });
+    assert.equal(empiete.status, 409);
+    const ok = await api(chemin, {
+      method: 'PUT',
+      token: coach.token,
+      body: { ...CYCLE, nom: 'Affûtage court', dateDebut: '2026-11-02', dateFin: '2026-11-08' },
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.nom, 'Affûtage court');
+  });
+
+  test('un autre coach n’accède pas aux cycles ; le coach a les siens', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const autreCoach = await creerCompte('coach');
+    const cree = await api('cycles', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...CYCLE, athleteId: athlete.user.id },
+    });
+    const chemin = `cycles/${cree.body.id}`;
+    const pour = `athleteId=${athlete.user.id}&from=2026-10-01&to=2026-10-31`;
+    assert.equal((await api(`cycles?${pour}`, { token: autreCoach.token })).status, 403);
+    assert.equal(
+      (await api(chemin, { method: 'PUT', token: autreCoach.token, body: CYCLE })).status,
+      404,
+    );
+    assert.equal((await api(chemin, { method: 'DELETE', token: autreCoach.token })).status, 404);
+    const pourAthleteDuCoach = await api('cycles', {
+      method: 'POST',
+      token: autreCoach.token,
+      body: { ...CYCLE, athleteId: athlete.user.id },
+    });
+    assert.equal(pourAthleteDuCoach.status, 403);
+
+    // Le coach se crée un cycle à lui (même période que celui de son athlète : pas de conflit)
+    const moi = await api('cycles', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...CYCLE, athleteId: coach.user.id },
+    });
+    assert.equal(moi.status, 201);
+    assert.equal((await api(chemin, { method: 'DELETE', token: coach.token })).status, 204);
+  });
+});
+
 describe('entraînement du coach', () => {
   const periode = 'from=2026-10-26&to=2026-11-01';
 

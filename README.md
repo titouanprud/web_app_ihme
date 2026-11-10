@@ -41,6 +41,7 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Voir le calendrier d'un athlète avec le statut de chaque séance, en vue **Jour, Semaine, Mois, Trimestre ou Année** (vue gardée dans l'adresse), avec les **totaux du prévu** : course (km, heures), vélo (km, heures), ski-alpinisme (heures, D+), renfo (heures), D+ total et temps total de sport, par semaine, par mois et sur la période.
 - Lire les retours des athlètes.
 - Consulter les records de ses athlètes et saisir son estimation de leurs seuils **SV1 / SV2** (allure et FC).
+- **Cycles** de plusieurs semaines (préparation générale, spécifique, affûtage, récupération, compétition, autre) pour ses athlètes et pour lui-même : nom, dates (du lundi au dimanche), objectif, couleur. Deux cycles du même athlète ne se chevauchent pas. Un bandeau coloré les montre dans le calendrier ; un clic affiche l'objectif et les totaux du cycle.
 - **Mon entraînement** : le coach se planifie des séances (sans validation), a son propre profil sportif (records, seuils) et fait le retour de ses séances.
 
 **Athlète**
@@ -50,6 +51,7 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Marquer la séance comme réalisée ou non réalisée, avec un retour : difficulté de la séance (1 à 10), forme ressentie (1 à 10), commentaire.
 - Renseigner ses records sur 5 km, 10 km, semi-marathon et marathon.
 - Voir ses allures SV1 / SV2 estimées par son coach (sans pouvoir les modifier).
+- Voir ses cycles d'entraînement (objectif et totaux), sans pouvoir les modifier.
 
 ### Version 2 (si le temps le permet)
 - Vue mois du calendrier.
@@ -116,6 +118,7 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 - **retours** : id, seance_id → seances, difficulte (1-10), forme (1-10), commentaire, date (les anciennes colonnes ressenti et durée_réelle_min sont conservées mais plus utilisées)
 - **records** : athlete_id → users, distance (`5k` | `10k` | `semi` | `marathon`), temps_sec, date_record
 - **seuils** : athlete_id → users, sv1_allure_sec, sv1_fc, sv2_allure_sec, sv2_fc, date_maj
+- **cycles** : id, coach_id → users, athlete_id → users, nom, type (`preparation_generale` | `specifique` | `affutage` | `recuperation` | `competition` | `autre`), date_debut (un lundi), date_fin (un dimanche), objectif, couleur (`#RRVVBB`)
 - **app_settings** : clé, valeur (sert à stocker le secret JWT généré au premier démarrage si la variable `JWT_SECRET` n'existe pas, car le serveur du cours ne fournit que `DATABASE_URL`)
 
 ## 7. API (première version)
@@ -150,6 +153,10 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | DELETE | `/api/seances-types/:id` | coach | Supprimer un modèle |
 | GET | `/api/profil?athleteId=` | coach / athlète | Records et seuils d'un athlète |
 | PUT | `/api/profil/records` | connecté | Enregistrer ses propres records (athlète, ou coach pour lui-même) |
+| GET | `/api/cycles?athleteId=&from=&to=` | coach / athlète | Cycles qui touchent la période |
+| POST | `/api/cycles` | coach | Créer un cycle (athlète ou lui-même) |
+| PUT | `/api/cycles/:id` | coach | Modifier un de ses cycles |
+| DELETE | `/api/cycles/:id` | coach | Supprimer un de ses cycles (les séances restent) |
 | PUT | `/api/profil/seuils/:athleteId` | coach | Enregistrer son estimation de SV1 / SV2 |
 
 ## 8. Structure du dépôt
@@ -236,6 +243,7 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 - **Calendrier** : la vue et la date sont dans l'adresse (`?vue=mois&date=2026-11-10`). Les vues Mois, Trimestre et Année affichent des semaines complètes (lundi → dimanche). En Trimestre / Année, une semaine à cheval sur deux mois est rangée dans le mois de son jeudi (règle ISO 8601) ; les sous-totaux de mois, eux, comptent exactement les jours du mois. Sur mobile, ces grilles défilent horizontalement.
 - **Glisser-déposer** avec `@dnd-kit/core` plutôt que le glisser-déposer natif du navigateur, qui ne fonctionne pas au doigt. Principe : `<DndContext>` (page de planification) suit le pointeur et appelle `onDragEnd({ active, over })` quand on lâche ; `useDraggable` rend un modèle ou une séance déplaçable, `useDroppable` fait de chaque jour une zone de dépôt ; chacun porte des `data` (le modèle, la séance, la date). Le jour visé est celui sous le pointeur (`pointerWithin`). À la souris, le déplacement démarre après 6 px (un clic ouvre toujours la séance) ; au doigt, après un appui de 200 ms (un glissement rapide fait défiler la page). Déplacer une séance = la même modification qu'avec le formulaire (`PUT`), avec la nouvelle date.
 - **Catalogue de départ** (`server/catalogueDepart.js`) : ajouté à la création d'un compte coach, ou au premier affichage du catalogue pour les coachs existants. La colonne `users.catalogue_initialise` est passée à `true` dans la même transaction : un coach qui supprime ces modèles ne les voit pas revenir.
+- **Cycles** : le lundi / dimanche est vérifié par la route et par une contrainte `CHECK` (`EXTRACT(ISODOW …)`). Le non-chevauchement est vérifié par une requête dans une transaction, protégée par `pg_advisory_xact_lock(athlete_id)` pour que deux enregistrements simultanés ne passent pas tous les deux (une contrainte d'exclusion PostgreSQL demanderait l'extension `btree_gist`, peut-être absente sur le serveur du cours). Un cycle dure au plus 52 semaines. Dans le formulaire, les dates choisies sont ramenées au lundi et au dimanche de leur semaine.
 - **Code partagé** : les calculs sur les blocs (durée, distance, D+) sont dans `server/partage/estimation.js`, importé par le serveur et par React (`src/blocs.js`). Le fichier est rangé dans `server/` car le Dockerfile de production ne copie que ce dossier.
 
 ## 13. Questions ouvertes

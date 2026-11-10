@@ -1592,3 +1592,87 @@ a.btn {
     max-height: 320px;
   }
 }
+
+/* ===== Cycles ===== */
+.bandeau-cycle {
+  font: inherit;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  padding: 0.35rem 0.75rem;
+  border: 0;
+  border-left: 6px solid var(--cycle);
+  border-radius: 6px;
+  /* Fond très clair de la couleur du cycle (couleur + transparence) */
+  background: color-mix(in srgb, var(--cycle) 14%, white);
+  color: var(--texte);
+  text-align: left;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.bandeau-cycle:hover {
+  background: color-mix(in srgb, var(--cycle) 24%, white);
+}
+.bandeau-cycle span {
+  color: var(--texte-discret);
+}
+.cal .bandeau-cycle {
+  margin-bottom: 0.5rem;
+}
+/* Vues Mois à Année : bandeau collé à la grille, bordure gauche sur chaque semaine du cycle */
+.grille-periode .bandeau-cycle {
+  margin: 0;
+  border-radius: 0;
+}
+.rangee-cycle > :first-child {
+  box-shadow: inset 5px 0 0 var(--cycle);
+  padding-left: 0.6rem;
+}
+.choix-couleur {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.choix-couleur legend {
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 0.3rem;
+}
+.pastille-couleur {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cycle);
+  cursor: pointer;
+  position: relative;
+}
+.pastille-couleur input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.pastille-couleur:has(input:checked) {
+  box-shadow:
+    0 0 0 2px white,
+    0 0 0 4px var(--texte);
+}
+.pastille-couleur:has(input:focus-visible) {
+  outline: 2px solid var(--primaire);
+  outline-offset: 4px;
+}
+/* Texte lu par les lecteurs d'écran mais invisible à l'écran */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

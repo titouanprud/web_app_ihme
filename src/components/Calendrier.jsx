@@ -10,6 +10,7 @@ import {
 import { formaterDate, toISODate } from '../dates.js';
 import { useApi } from '../useApi.js';
 import { ErrorMessage } from './Feedback.jsx';
+import { BandeauCycle, cycleDuJour } from './Cycles.jsx';
 import { GlisserDeposerActif, ZoneJour } from './GlisserDeposer.jsx';
 import SeanceDetails from './SeanceDetails.jsx';
 import { VueCompacte, VueMois } from './VuesPeriode.jsx';
@@ -33,12 +34,14 @@ export function useVueCalendrier() {
 // - version : à augmenter après une modification pour tout recharger ;
 // - onOuvrir(seance) : clic sur une séance ; onAjouter(date) : optionnel (coach) ;
 // - glisserDeposer : true pour déposer des modèles et déplacer les séances (le <DndContext>
-//   est fourni par la page, qui contient aussi le catalogue).
+//   est fourni par la page, qui contient aussi le catalogue) ;
+// - onOuvrirCycle(cycle) : clic sur le bandeau d'un cycle.
 export default function Calendrier({
   athleteId,
   version = 0,
   onOuvrir,
   onAjouter,
+  onOuvrirCycle,
   glisserDeposer = false,
 }) {
   const { vue, date, aller } = useVueCalendrier();
@@ -46,7 +49,7 @@ export default function Calendrier({
   const periode = periodeAffichee(vue, date);
   const libelle = libellePeriode(vue, date);
 
-  // Trois demandes au plus : les séances, les totaux par semaine et les totaux par mois
+  // Quatre demandes au plus : séances, totaux par semaine, totaux par mois, cycles
   const pour = athleteId ? `&athleteId=${athleteId}` : '';
   const grille = `from=${periode.grilleDebut}&to=${periode.grilleFin}${pour}`;
   const avecMois = ['mois', 'trimestre', 'annee'].includes(vue);
@@ -60,7 +63,12 @@ export default function Calendrier({
     version,
   );
 
+  const reponseCycles = useApi(`cycles?${grille}`, version);
+
   const liste = seances.data ?? [];
+  const cycles = reponseCycles.data ?? [];
+  // Vues Jour et Semaine : un seul bandeau, celui du cycle en cours
+  const cycleEnCours = cycleDuJour(cycles, periode.debut);
   const totauxSemaines = indexerParPeriode(semaines.data);
   const totauxMois = indexerParPeriode(mois.data);
   const loading = seances.loading || semaines.loading || mois.loading;
@@ -111,9 +119,14 @@ export default function Calendrier({
           </div>
         </div>
 
-        <ErrorMessage message={seances.error || semaines.error || mois.error} />
+        <ErrorMessage
+          message={seances.error || semaines.error || mois.error || reponseCycles.error}
+        />
 
         <div className={loading ? 'calendrier-chargement' : ''} aria-busy={loading}>
+          {(vue === 'jour' || vue === 'semaine') && cycleEnCours && (
+            <BandeauCycle cycle={cycleEnCours} onOuvrir={onOuvrirCycle} />
+          )}
           {vue === 'jour' && (
             <VueJour jour={date} seances={liste} onOuvrir={onOuvrir} onAjouter={onAjouter} />
           )}
@@ -132,8 +145,10 @@ export default function Calendrier({
               seances={liste}
               totauxSemaines={totauxSemaines}
               totalMois={totauxMois[periode.debut]}
+              cycles={cycles}
               onOuvrir={onOuvrir}
               onAjouter={onAjouter}
+              onOuvrirCycle={onOuvrirCycle}
             />
           )}
           {(vue === 'trimestre' || vue === 'annee') && (
@@ -143,7 +158,9 @@ export default function Calendrier({
               seances={liste}
               totauxSemaines={totauxSemaines}
               totauxMois={totauxMois}
+              cycles={cycles}
               onOuvrir={onOuvrir}
+              onOuvrirCycle={onOuvrirCycle}
             />
           )}
         </div>

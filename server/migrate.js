@@ -117,6 +117,24 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages (coach_id, athlete_id, id);
 
+-- Cycles d'entraînement de plusieurs semaines (du lundi au dimanche), créés par le coach.
+-- Deux cycles du même athlète ne se chevauchent pas : vérifié par la route (server/routes/cycles.js).
+-- ISODOW : jour de la semaine de 1 (lundi) à 7 (dimanche).
+CREATE TABLE IF NOT EXISTS cycles (
+  id         SERIAL PRIMARY KEY,
+  coach_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  athlete_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nom        TEXT NOT NULL,
+  type       TEXT NOT NULL CHECK (type IN ('preparation_generale', 'specifique', 'affutage',
+                                           'recuperation', 'competition', 'autre')),
+  date_debut DATE NOT NULL CHECK (EXTRACT(ISODOW FROM date_debut) = 1),
+  date_fin   DATE NOT NULL CHECK (EXTRACT(ISODOW FROM date_fin) = 7),
+  objectif   TEXT NOT NULL DEFAULT '',
+  couleur    TEXT NOT NULL DEFAULT '#2563eb',
+  CHECK (date_fin > date_debut)
+);
+CREATE INDEX IF NOT EXISTS cycles_athlete_dates_idx ON cycles (athlete_id, date_debut);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   cle    TEXT PRIMARY KEY,
   valeur TEXT NOT NULL

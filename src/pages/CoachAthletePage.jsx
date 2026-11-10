@@ -15,6 +15,7 @@ import { formaterDate, toISODate } from '../dates.js';
 import { useCatalogue } from '../useCatalogue.js';
 import Calendrier from '../components/Calendrier.jsx';
 import Catalogue from '../components/Catalogue.jsx';
+import { CycleDetails, CycleForm } from '../components/Cycles.jsx';
 import DupliquerForm from '../components/DupliquerForm.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
@@ -51,8 +52,9 @@ export default function CoachAthletePage({ moi = false }) {
   const [enDeplacement, setEnDeplacement] = useState(null); // modèle ou séance déplacé
   const [erreurDepot, setErreurDepot] = useState('');
 
-  // Fenêtre ouverte : null ou { mode, seance?, date? }
-  // modes : 'creer', 'voir', 'modifier', 'dupliquer'
+  // Fenêtre ouverte : null ou { mode, seance?, date?, cycle? }
+  // modes : 'creer', 'voir', 'modifier', 'dupliquer' (séance) ;
+  //         'cycle', 'cycle-creer', 'cycle-modifier' (cycle)
   const [fenetre, setFenetre] = useState(null);
   const [message, setMessage] = useState('');
   const fermer = () => {
@@ -146,6 +148,28 @@ export default function CoachAthletePage({ moi = false }) {
     }
   }
 
+  // ----- Cycles -----
+  async function enregistrerCycle(valeurs) {
+    if (fenetre.mode === 'cycle-creer') {
+      await api('cycles', { method: 'POST', body: { ...valeurs, athleteId: Number(athleteId) } });
+    } else {
+      await api(`cycles/${fenetre.cycle.id}`, { method: 'PUT', body: valeurs });
+    }
+    fermer();
+    recharger();
+  }
+
+  async function supprimerCycle(cycle) {
+    if (!window.confirm(`Supprimer le cycle « ${cycle.nom} » ? Les séances restent.`)) return;
+    try {
+      await api(`cycles/${cycle.id}`, { method: 'DELETE' });
+      fermer();
+      recharger();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  }
+
   async function supprimer(seance) {
     if (!window.confirm(`Supprimer la séance « ${seance.titre} » ?`)) return;
     try {
@@ -186,6 +210,13 @@ export default function CoachAthletePage({ moi = false }) {
           )}
           <button
             type="button"
+            className="btn btn-ghost"
+            onClick={() => setFenetre({ mode: 'cycle-creer' })}
+          >
+            + Cycle
+          </button>
+          <button
+            type="button"
             className="btn btn-primary"
             onClick={() => setFenetre({ mode: 'creer', date: toISODate(new Date()) })}
           >
@@ -221,6 +252,7 @@ export default function CoachAthletePage({ moi = false }) {
               version={version}
               onOuvrir={voir}
               onAjouter={(date) => setFenetre({ mode: 'creer', date })}
+              onOuvrirCycle={(cycle) => setFenetre({ mode: 'cycle', cycle })}
               glisserDeposer
             />
           </div>
@@ -286,6 +318,37 @@ export default function CoachAthletePage({ moi = false }) {
             onSubmit={modifier}
             onCancel={() => voir(fenetre.seance)}
             profil={profil}
+          />
+        </Modal>
+      )}
+      {fenetre?.mode === 'cycle' && (
+        <Modal titre={fenetre.cycle.nom} onClose={fermer}>
+          <CycleDetails cycle={fenetre.cycle} athleteId={athleteId} />
+          <div className="form-actions form-actions-multiples">
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => supprimerCycle(fenetre.cycle)}
+            >
+              Supprimer
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setFenetre({ mode: 'cycle-modifier', cycle: fenetre.cycle })}
+            >
+              Modifier
+            </button>
+          </div>
+        </Modal>
+      )}
+      {(fenetre?.mode === 'cycle-creer' || fenetre?.mode === 'cycle-modifier') && (
+        <Modal titre={fenetre.cycle ? 'Modifier le cycle' : 'Nouveau cycle'} onClose={fermer} large>
+          <CycleForm
+            initial={fenetre.cycle}
+            dateParDefaut={toISODate(new Date())}
+            onSubmit={enregistrerCycle}
+            onCancel={fermer}
           />
         </Modal>
       )}
