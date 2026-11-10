@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { debutSemaine, formaterDate } from '../dates.js';
-import { useSeancesSemaine } from '../useSeancesSemaine.js';
+import { formaterDate, toISODate } from '../dates.js';
+import Calendrier from '../components/Calendrier.jsx';
 import DupliquerForm from '../components/DupliquerForm.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
@@ -12,7 +12,6 @@ import RetourForm from '../components/RetourForm.jsx';
 import { ProfilAthleteCoach, useProfil } from '../components/ProfilSportif.jsx';
 import SeanceDetails from '../components/SeanceDetails.jsx';
 import SeanceForm from '../components/SeanceForm.jsx';
-import WeekCalendar, { WeekNav } from '../components/WeekCalendar.jsx';
 
 // Calendrier d'un athlète vu par son coach : création, modification, duplication,
 // suppression, enregistrement comme modèle et lecture des retours.
@@ -24,8 +23,9 @@ export default function CoachAthletePage({ moi = false }) {
   const athleteId = moi ? String(user.id) : params.athleteId;
   const [athletes, setAthletes] = useState(null);
   const [erreurAthlete, setErreurAthlete] = useState('');
-  const [lundi, setLundi] = useState(debutSemaine());
-  const { seances, loading, error, recharger } = useSeancesSemaine(lundi, athleteId);
+  // Augmentée après chaque modification : le calendrier (séances et totaux) se recharge
+  const [version, setVersion] = useState(0);
+  const recharger = () => setVersion((v) => v + 1);
   // Profil de l'athlète (records, seuils) : affiché, et utilisé pour les allures @10k, @SV1…
   const { profil, setProfil, erreur: erreurProfil } = useProfil(athleteId);
 
@@ -136,7 +136,7 @@ export default function CoachAthletePage({ moi = false }) {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => setFenetre({ mode: 'creer', date: lundi })}
+            onClick={() => setFenetre({ mode: 'creer', date: toISODate(new Date()) })}
           >
             + Nouvelle séance
           </button>
@@ -150,12 +150,9 @@ export default function CoachAthletePage({ moi = false }) {
         erreur={erreurProfil}
         moi={moi}
       />
-      <WeekNav lundi={lundi} onChange={setLundi} />
-      <ErrorMessage message={error} />
-      <WeekCalendar
-        lundi={lundi}
-        seances={seances}
-        loading={loading}
+      <Calendrier
+        athleteId={athleteId}
+        version={version}
         onOuvrir={voir}
         onAjouter={(date) => setFenetre({ mode: 'creer', date })}
       />

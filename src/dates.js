@@ -28,3 +28,15 @@ export function ajouterJours(iso, nombre) {
 export function formaterDate(iso, options = { weekday: 'long', day: 'numeric', month: 'long' }) {
   return parseISODate(iso).toLocaleDateString('fr-FR', options);
 }
+
+// Premier jour du mois décalé de "nombre" mois, ex. ('2026-11-10', 1) → '2026-12-01'
+export function debutMois(iso, nombre = 0) {
+  const date = parseISODate(iso);
+  return toISODate(new Date(date.getFullYear(), date.getMonth() + nombre, 1));
+}
+
+// Dernier jour du mois, ex. '2026-02-10' → '2026-02-28' (le jour 0 du mois suivant)
+export function finMois(iso) {
+  const date = parseISODate(iso);
+  return toISODate(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}

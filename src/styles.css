@@ -593,23 +593,65 @@ a.btn {
 }
 
 /* ===== Calendrier ===== */
-.week-nav {
+.cal {
   display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.cal-barre {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
 }
-.week-nav-centre {
+.cal-vues {
   display: flex;
-  flex-direction: column;
+  border: 1px solid var(--bordure);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.cal-vue {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem;
+  border: 0;
+  border-right: 1px solid var(--bordure);
+  background: none;
+  cursor: pointer;
+}
+.cal-vue:last-child {
+  border-right: 0;
+}
+.cal-vue-active {
+  background: var(--primaire);
+  color: white;
+}
+.cal-nav {
+  display: flex;
   align-items: center;
-  text-align: center;
+  gap: 0.4rem;
+}
+.cal-titre {
+  margin-left: 0.4rem;
+}
+.cal-titre::first-letter {
+  text-transform: uppercase;
 }
 .calendrier {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.5rem;
   transition: opacity 0.15s;
+}
+/* Vue Semaine : 7 jours + une colonne de totaux */
+.calendrier-semaine {
+  grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(130px, 1.1fr);
+}
+.jour-totaux {
+  background: var(--fond);
 }
 .calendrier-chargement {
   opacity: 0.5;
@@ -1202,4 +1244,223 @@ a.btn {
   text-decoration: none;
   cursor: help;
   margin-left: 0.1rem;
+}
+
+/* ===== Totaux ===== */
+.totaux {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+}
+.totaux div {
+  display: flex;
+  flex-direction: column;
+}
+.totaux dt {
+  color: var(--texte-discret);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.totaux dd {
+  margin: 0;
+  font-weight: 600;
+}
+.totaux-total {
+  border-top: 1px solid var(--bordure);
+  padding-top: 0.3rem;
+}
+.totaux-compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.6rem;
+  font-size: 0.75rem;
+}
+.totaux-compact strong {
+  color: var(--texte-discret);
+  font-weight: 600;
+}
+
+/* ===== Vues Mois, Trimestre, Année ===== */
+/* Sur petit écran, ces grilles défilent horizontalement plutôt que de s'écraser */
+.defilement-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.grille-periode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bordure);
+  border: 1px solid var(--bordure);
+  border-radius: var(--rayon);
+  overflow: hidden;
+}
+.rangee {
+  display: grid;
+  grid-template-columns: var(--colonnes);
+  gap: 2px;
+}
+.rangee > * {
+  background: var(--surface);
+  padding: 0.3rem 0.4rem;
+  min-width: 0;
+}
+.rangee-entete > span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--texte-discret);
+  text-align: center;
+  background: var(--fond);
+}
+.grille-mois {
+  --colonnes: repeat(7, minmax(90px, 1fr)) minmax(150px, 1.3fr);
+  min-width: 860px;
+}
+.grille-compacte {
+  --colonnes: 64px repeat(7, minmax(26px, 1fr)) minmax(240px, 4fr);
+  min-width: 620px;
+}
+.groupe-mois {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.case-jour {
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.case-jour-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.case-jour-entete .btn-ajouter {
+  width: 22px;
+  height: 22px;
+  font-size: 0.95rem;
+}
+.hors-periode {
+  background: var(--fond) !important;
+  color: var(--texte-discret);
+}
+.case-jour.jour-aujourdhui,
+.case-mini.jour-aujourdhui {
+  box-shadow: inset 0 0 0 2px var(--primaire);
+}
+.case-totaux {
+  background: var(--fond) !important;
+}
+.carte-mini {
+  padding: 0.25rem 0.35rem;
+  gap: 0;
+}
+.carte-mini .carte-titre {
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.carte-mini .carte-infos {
+  font-size: 0.68rem;
+}
+/* Lignes de total : le libellé occupe toutes les colonnes sauf la dernière (les totaux) */
+.libelle-total {
+  grid-column: 1 / -2;
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+}
+.rangee-sous-total > * {
+  background: var(--primaire-clair) !important;
+}
+.rangee-total > * {
+  background: #dbe5fb !important;
+}
+.semaine-libelle {
+  font-size: 0.72rem;
+  color: var(--texte-discret);
+  white-space: nowrap;
+}
+.case-mini {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 26px;
+}
+/* Une pastille par séance, colorée selon le sport */
+.pastille {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: var(--sport, var(--primaire));
+}
+.pastille:hover,
+.pastille:focus-visible {
+  outline: 2px solid var(--texte);
+  outline-offset: 1px;
+}
+/* Séance non réalisée : pastille creuse */
+.pastille.statut-non_realisee {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--sport);
+}
+.sport-course {
+  --sport: #2563eb;
+}
+.sport-velo {
+  --sport: #16a34a;
+}
+.sport-ski_alpi {
+  --sport: #0891b2;
+}
+.sport-renfo {
+  --sport: #7c3aed;
+}
+.sport-autre {
+  --sport: #94a3b8;
+}
+
+/* ===== Vue Jour ===== */
+.vue-jour {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.vue-jour-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.vue-jour-seance {
+  padding: 1rem;
+}
+.vue-jour-entete {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 760px) {
+  .calendrier-semaine {
+    grid-template-columns: 1fr;
+  }
+  .cal-vue {
+    padding: 0.4rem 0.5rem;
+  }
 }

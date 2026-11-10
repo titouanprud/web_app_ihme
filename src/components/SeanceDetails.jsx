@@ -1,6 +1,6 @@
 import { formaterDistance, formaterDplus, libelleSport, totaux } from '../blocs.js';
 import { formaterDate } from '../dates.js';
-import { formaterDuree, libelleType } from '../libelles.js';
+import { dureeSeanceMin, formaterDuree, libelleType } from '../libelles.js';
 import BlocsAffichage from './BlocsAffichage.jsx';
 import { StatusBadge } from './WeekCalendar.jsx';
 
@@ -22,8 +22,8 @@ export default function SeanceDetails({ seance }) {
           <dd>{libelleType(seance.type)}</dd>
         </div>
         <div>
-          <dt>Durée prévue</dt>
-          <dd>{formaterDuree(seance.dureePrevueMin) ?? '—'}</dd>
+          <dt>Durée</dt>
+          <dd>{formaterDuree(dureeSeanceMin(seance)) ?? '—'}</dd>
         </div>
         {t.distance > 0 && (
           <div>

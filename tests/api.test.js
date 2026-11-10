@@ -14,6 +14,7 @@ import {
   estimerBlocs,
   resoudreReferences,
 } from '../server/partage/estimation.js';
+import { moisDeLaSemaine, periodeAffichee } from '../src/calendrier.js';
 
 let server;
 let baseUrl;
@@ -741,6 +742,132 @@ describe('profil sportif : records et seuils', () => {
       token: autreCoach.token,
     });
     assert.equal(lectureAutre.status, 403);
+  });
+});
+
+describe('calendrier et totaux', () => {
+  test('périodes affichées par chaque vue', () => {
+    assert.deepEqual(periodeAffichee('semaine', '2026-11-12'), {
+      debut: '2026-11-09',
+      fin: '2026-11-15',
+      grilleDebut: '2026-11-09',
+      grilleFin: '2026-11-15',
+    });
+    // Trimestre 4 : octobre → décembre, élargi à des semaines complètes (lundi → dimanche)
+    assert.deepEqual(periodeAffichee('trimestre', '2026-11-12'), {
+      debut: '2026-10-01',
+      fin: '2026-12-31',
+      grilleDebut: '2026-09-28',
+      grilleFin: '2027-01-03',
+    });
+    assert.equal(periodeAffichee('annee', '2026-11-12').debut, '2026-01-01');
+    assert.equal(periodeAffichee('mois', '2026-02-10').fin, '2026-02-28');
+    // La semaine du lundi 28 septembre a son jeudi le 1er octobre : elle compte pour octobre
+    assert.equal(moisDeLaSemaine('2026-09-28'), '2026-10-01');
+  });
+
+  test('durée et distance estimées enregistrées avec la séance', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const res = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: {
+        ...SEANCE,
+        athleteId: athlete.user.id,
+        dureePrevueMin: null,
+        // 20 min à 5:00 /km (4 km) + 2 km à 4:00 /km (8 min)
+        blocs: [
+          {
+            type: 'echauffement',
+            mesure: 'duree',
+            valeur: 1200,
+            cible: { type: 'allure', min: 300 },
+          },
+          {
+            type: 'intervalle',
+            mesure: 'distance',
+            valeur: 2000,
+            cible: { type: 'allure', min: 240 },
+          },
+        ],
+      },
+    });
+    assert.equal(res.body.dureeEstimeeSec, 1200 + 480);
+    assert.equal(res.body.distanceEstimeeM, 6000);
+
+    // Sans blocs : la durée prévue saisie, pas de distance
+    const simple = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: athlete.user.id },
+    });
+    assert.equal(simple.body.dureeEstimeeSec, 45 * 60);
+    assert.equal(simple.body.distanceEstimeeM, 0);
+  });
+
+  test('totaux par semaine et par mois, sur le prévu', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const creer = (seance) =>
+      api('seances', {
+        method: 'POST',
+        token: coach.token,
+        body: { ...SEANCE, athleteId: athlete.user.id, ...seance },
+      });
+    const kmEnDuree = (metres, allure) => [
+      {
+        type: 'intervalle',
+        mesure: 'distance',
+        valeur: metres,
+        cible: { type: 'allure', min: allure },
+      },
+    ];
+    // Semaine du 26 oct. : 10 km de course (50 min) + 1 h de vélo ; semaine du 2 nov. : ski + renfo
+    await creer({ date: '2026-10-27', blocs: kmEnDuree(10000, 300), dureePrevueMin: null });
+    await creer({ date: '2026-10-29', sport: 'velo', dureePrevueMin: 60, dplusPrevuM: 400 });
+    await creer({ date: '2026-11-02', sport: 'ski_alpi', dureePrevueMin: 120, dplusPrevuM: 1100 });
+    await creer({ date: '2026-11-04', sport: 'renfo', type: 'renfo', dureePrevueMin: 30 });
+
+    const chemin = (groupe) =>
+      `seances/totaux?athleteId=${athlete.user.id}&from=2026-10-26&to=2026-11-08&groupe=${groupe}`;
+    const semaines = await api(chemin('semaine'), { token: coach.token });
+    assert.equal(semaines.status, 200);
+    assert.deepEqual(
+      semaines.body.map((t) => t.periode),
+      ['2026-10-26', '2026-11-02'],
+    );
+    const [s1, s2] = semaines.body;
+    assert.equal(s1.courseDistanceM, 10000);
+    assert.equal(s1.courseDureeSec, 3000);
+    assert.equal(s1.veloDureeSec, 3600);
+    assert.equal(s1.dplusM, 400);
+    assert.equal(s1.dureeSec, 6600);
+    assert.equal(s2.skiDureeSec, 7200);
+    assert.equal(s2.skiDplusM, 1100);
+    assert.equal(s2.renfoDureeSec, 1800);
+    assert.equal(s2.nombre, 2);
+
+    const mois = await api(chemin('mois'), { token: coach.token });
+    assert.deepEqual(
+      mois.body.map((t) => [t.periode, t.nombre]),
+      [
+        ['2026-10-01', 2],
+        ['2026-11-01', 2],
+      ],
+    );
+
+    // L'athlète lit ses propres totaux ; un autre coach n'y a pas accès
+    const parAthlete = await api(chemin('semaine'), { token: athlete.token });
+    assert.equal(parAthlete.body.length, 2);
+    const autreCoach = await creerCompte('coach');
+    assert.equal((await api(chemin('semaine'), { token: autreCoach.token })).status, 403);
+  });
+
+  test('totaux : regroupement et période vérifiés', async () => {
+    const { athlete } = await creerCoachEtAthlete();
+    const totaux = (requete) => api(`seances/totaux?${requete}`, { token: athlete.token });
+    assert.equal((await totaux('from=2026-01-01&to=2026-01-31&groupe=jour')).status, 400);
+    assert.equal((await totaux('from=2026-01-01&to=2027-06-30')).status, 400); // > 400 jours
+    assert.equal((await totaux('from=2026-02-01&to=2026-01-01')).status, 400);
   });
 });
 

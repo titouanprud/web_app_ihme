@@ -2,13 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { debutSemaine } from '../dates.js';
-import { useSeancesSemaine } from '../useSeancesSemaine.js';
+import Calendrier from '../components/Calendrier.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
 import RetourForm from '../components/RetourForm.jsx';
 import SeanceDetails from '../components/SeanceDetails.jsx';
-import WeekCalendar, { WeekNav } from '../components/WeekCalendar.jsx';
 
 // Vérification régulière pendant qu'une demande attend la réponse du coach
 const INTERVALLE_DEMANDE_MS = 15000;
@@ -21,14 +19,14 @@ export default function AthletePage() {
 }
 
 function MonCalendrier({ coach }) {
-  const [lundi, setLundi] = useState(debutSemaine());
-  const { seances, loading, error, remplacerSeance } = useSeancesSemaine(lundi);
   const [ouverte, setOuverte] = useState(null);
+  // Augmentée après un retour : le calendrier se recharge
+  const [version, setVersion] = useState(0);
 
   async function envoyerRetour(retour) {
     const seance = await api(`seances/${ouverte.id}/retour`, { method: 'POST', body: retour });
     setOuverte(seance);
-    remplacerSeance(seance);
+    setVersion((v) => v + 1);
   }
 
   return (
@@ -39,9 +37,7 @@ function MonCalendrier({ coach }) {
           Coach : {coach.prenom} {coach.nom} · <Link to="/athlete/messages">Lui écrire</Link>
         </span>
       </div>
-      <WeekNav lundi={lundi} onChange={setLundi} />
-      <ErrorMessage message={error} />
-      <WeekCalendar lundi={lundi} seances={seances} loading={loading} onOuvrir={setOuverte} />
+      <Calendrier version={version} onOuvrir={setOuverte} />
 
       {ouverte && (
         <Modal titre={ouverte.titre} onClose={() => setOuverte(null)}>

@@ -38,14 +38,14 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Construire la séance en **blocs** : échauffement, intervalle, récupération, retour au calme, et répétitions (ex. 6 × (1000 m + 2 min)). Chaque bloc se mesure en durée ou en distance, avec une cible : allure ou zone 1 à 5 en course à pied, puissance ou zone à vélo. Les blocs se réordonnent (↑ ↓), se dupliquent et se suppriment ; durée et distance totales sont calculées.
 - Modifier, supprimer et **dupliquer** une séance (autre date, autre athlète).
 - **Bibliothèque** de séances types réutilisables pour créer une séance en un clic.
-- Voir le calendrier (vue semaine) d'un athlète avec le statut de chaque séance.
+- Voir le calendrier d'un athlète avec le statut de chaque séance, en vue **Jour, Semaine, Mois, Trimestre ou Année** (vue gardée dans l'adresse), avec les **totaux du prévu** : course (km, heures), vélo (km, heures), ski-alpinisme (heures, D+), renfo (heures), D+ total et temps total de sport, par semaine, par mois et sur la période.
 - Lire les retours des athlètes.
 - Consulter les records de ses athlètes et saisir son estimation de leurs seuils **SV1 / SV2** (allure et FC).
 - **Mon entraînement** : le coach se planifie des séances (sans validation), a son propre profil sportif (records, seuils) et fait le retour de ses séances.
 
 **Athlète**
 - Choisir son coach parmi les comptes coach existants ; le lien est créé quand le coach accepte la demande.
-- Voir son calendrier (vue semaine) avec les séances prévues.
+- Voir son calendrier (vues Jour à Année, avec les totaux) et les séances prévues.
 - Ouvrir une séance pour voir le détail.
 - Marquer la séance comme réalisée ou non réalisée, avec un retour : difficulté de la séance (1 à 10), forme ressentie (1 à 10), commentaire.
 - Renseigner ses records sur 5 km, 10 km, semi-marathon et marathon.
@@ -111,7 +111,7 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 - **users** : id, email, mot_de_passe_hash, prénom, nom, rôle (`coach` | `athlete`), date_création
 - **coach_athletes** : id, coach_id → users, athlete_id → users (unique : un athlète n'a qu'un coach), statut (`en_attente` | `acceptee` | `refusee`), date_ajout
 - **messages** : id, coach_id → users, athlete_id → users, auteur_id → users, contenu, date_envoi, lu
-- **seances** : id, coach_id, athlete_id, date, titre, sport (`course` | `velo` | `ski_alpi` | `renfo` | `autre`), type, durée_prévue_min, dplus_prevu_m (D+ en mètres), description, blocs (JSONB : liste des blocs, voir `server/blocs.js`), statut (`prévue` | `réalisée` | `non_réalisée`)
+- **seances** : id, coach_id, athlete_id, date, titre, sport (`course` | `velo` | `ski_alpi` | `renfo` | `autre`), type, durée_prévue_min, dplus_prevu_m (D+ en mètres), duree_estimee_sec et distance_estimee_m (calculées à l'enregistrement, pour les totaux), description, blocs (JSONB : liste des blocs, voir `server/blocs.js`), statut (`prévue` | `réalisée` | `non_réalisée`)
 - **seances_types** : id, coach_id → users, titre, sport, type, durée_prévue_min, dplus_prevu_m, description, blocs (modèles sans date de la bibliothèque)
 - **retours** : id, seance_id → seances, difficulte (1-10), forme (1-10), commentaire, date (les anciennes colonnes ressenti et durée_réelle_min sont conservées mais plus utilisées)
 - **records** : athlete_id → users, distance (`5k` | `10k` | `semi` | `marathon`), temps_sec, date_record
@@ -136,7 +136,8 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | POST | `/api/messages` | coach / athlète | Envoyer un message |
 | GET | `/api/notifications` | connecté | Compteurs : messages non lus, demandes en attente |
 | GET | `/api/athletes` | coach | Liste de ses athlètes |
-| GET | `/api/seances?athleteId=&from=&to=` | coach / athlète | Séances sur une période |
+| GET | `/api/seances?athleteId=&from=&to=` | coach / athlète | Séances sur une période (400 jours maximum) |
+| GET | `/api/seances/totaux?athleteId=&from=&to=&groupe=semaine\|mois` | coach / athlète | Totaux du prévu par semaine ou par mois (une seule requête SQL agrégée) |
 | POST | `/api/seances` | coach | Créer une séance |
 | PUT | `/api/seances/:id` | coach | Modifier une séance |
 | DELETE | `/api/seances/:id` | coach | Supprimer une séance |
@@ -230,6 +231,8 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 - **Allures de référence** (course à pied) : une cible `reference` (`@5k`, `@10k`, `@21k`, `@42k`, `@SV1`, `@SV2`) copie dans le bloc l'allure calculée depuis le profil de l'athlète (temps du record ÷ distance, semi = 21,0975 km, marathon = 42,195 km ; ou seuil SV1 / SV2 du coach). Le coach peut la changer (`modifiee: true`, marquée d'un astérisque). Si le profil ne contient pas la valeur, le serveur refuse la séance tant que le coach n'a pas saisi l'allure. Un modèle du catalogue garde seulement la référence ; le serveur calcule l'allure quand la séance est créée pour un athlète.
 - **Duplication** : une séance dupliquée est une copie exacte, allures de référence comprises (elles ne sont pas recalculées pour l'autre athlète).
 - **Estimation** : avec une allure (fourchette : on prend le milieu), la distance d'un bloc en durée et la durée d'un bloc en distance sont calculées ; la séance affiche sa durée et sa distance estimées, répétitions comprises (« ≥ » si un bloc n'a pas d'allure).
+- **Totaux** : à chaque enregistrement, la séance garde sa durée et sa distance estimées (`server/partage/estimation.js` : durée des blocs si elle est complète, sinon la durée prévue saisie). Les totaux sont alors une seule requête `GROUP BY date_trunc('week' | 'month', date)` avec `sum(...) FILTER (WHERE sport = …)`. Les séances créées avant ces colonnes sont calculées une fois par la migration. Toutes les séances prévues comptent, quel que soit leur statut.
+- **Calendrier** : la vue et la date sont dans l'adresse (`?vue=mois&date=2026-11-10`). Les vues Mois, Trimestre et Année affichent des semaines complètes (lundi → dimanche). En Trimestre / Année, une semaine à cheval sur deux mois est rangée dans le mois de son jeudi (règle ISO 8601) ; les sous-totaux de mois, eux, comptent exactement les jours du mois. Sur mobile, ces grilles défilent horizontalement.
 - **Code partagé** : les calculs sur les blocs (durée, distance, D+) sont dans `server/partage/estimation.js`, importé par le serveur et par React (`src/blocs.js`). Le fichier est rangé dans `server/` car le Dockerfile de production ne copie que ce dossier.
 
 ## 13. Questions ouvertes

@@ -1,4 +1,5 @@
 import { pool } from './db.js';
+import { estimerSeance } from './partage/estimation.js';
 
 // Migration idempotente : peut être relancée à chaque démarrage sans rien casser.
 // "IF NOT EXISTS" crée seulement ce qui manque et ne supprime jamais de données.
@@ -75,6 +76,12 @@ ALTER TABLE seances ADD COLUMN IF NOT EXISTS dplus_prevu_m INTEGER
 ALTER TABLE seances_types ADD COLUMN IF NOT EXISTS dplus_prevu_m INTEGER
   CHECK (dplus_prevu_m BETWEEN 0 AND 20000);
 
+-- Durée (s) et distance (m) estimées à partir des blocs, calculées à chaque enregistrement
+-- pour que les totaux du calendrier soient une simple somme SQL.
+-- NULL = pas encore calculée (séance créée avant ces colonnes) : voir completerEstimations().
+ALTER TABLE seances ADD COLUMN IF NOT EXISTS duree_estimee_sec INTEGER;
+ALTER TABLE seances ADD COLUMN IF NOT EXISTS distance_estimee_m INTEGER;
+
 -- Records personnels de l'athlète (saisis par lui) : un temps par distance
 CREATE TABLE IF NOT EXISTS records (
   athlete_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -115,12 +122,29 @@ CREATE TABLE IF NOT EXISTS app_settings (
 // Numéro arbitraire qui identifie le verrou de migration.
 const VERROU_MIGRATION = 20261027;
 
+// Rattrapage des anciennes séances : on calcule leur durée et leur distance estimées
+// en JavaScript (même fonction que les routes). Ne touche que les séances pas encore calculées :
+// relancer la migration ne refait rien.
+async function completerEstimations(client) {
+  const { rows } = await client.query(
+    `SELECT id, blocs, duree_prevue_min FROM seances WHERE duree_estimee_sec IS NULL`,
+  );
+  for (const seance of rows) {
+    const { dureeSec, distanceM } = estimerSeance(seance.blocs, seance.duree_prevue_min);
+    await client.query(
+      'UPDATE seances SET duree_estimee_sec = $1, distance_estimee_m = $2 WHERE id = $3',
+      [dureeSec, distanceM, seance.id],
+    );
+  }
+}
+
 export async function migrate() {
   const client = await pool.connect();
   try {
     // Le verrou évite que deux processus lancés en même temps créent les tables en parallèle.
     await client.query('SELECT pg_advisory_lock($1)', [VERROU_MIGRATION]);
     await client.query(SCHEMA);
+    await completerEstimations(client);
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [VERROU_MIGRATION]).catch(() => {});
     client.release();

@@ -119,3 +119,20 @@ export function estimerBlocs(blocs) {
   }
   return { duree, distance, dplus, dureeComplete, distanceComplete };
 }
+
+// Durée (s) et distance (m) enregistrées avec la séance, pour les totaux du calendrier :
+// - durée : celle des blocs si elle est complète, sinon la durée prévue saisie,
+//   sinon ce que les blocs permettent de calculer ;
+// - distance : celle des blocs (0 si aucun bloc n'a de distance ni d'allure).
+export function estimerSeance(blocs, dureePrevueMin) {
+  const t = estimerBlocs(blocs);
+  let duree = t.duree;
+  if (
+    !(t.dureeComplete && t.duree > 0) &&
+    dureePrevueMin !== null &&
+    dureePrevueMin !== undefined
+  ) {
+    duree = dureePrevueMin * 60;
+  }
+  return { dureeSec: Math.round(duree), distanceM: Math.round(t.distance) };
+}
