@@ -52,7 +52,7 @@ export default function SeanceDetails({ seance }) {
 
       {retour && (
         <div className="retour">
-          <h3>Retour de l’athlète</h3>
+          <h3>Retour sur la séance</h3>
           <dl className="details-liste">
             <div>
               <dt>Difficulté</dt>

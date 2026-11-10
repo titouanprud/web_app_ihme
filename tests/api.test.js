@@ -679,7 +679,7 @@ describe('profil sportif : records et seuils', () => {
     assert.equal((await api('profil', { token: athlete.token })).body.records.length, 1);
   });
 
-  test('records invalides refusés et réservés à l’athlète', async () => {
+  test('records invalides refusés ; chacun n’enregistre que ses propres records', async () => {
     const { coach, athlete } = await creerCoachEtAthlete();
     const envoyer = (token, records) =>
       api('profil/records', { method: 'PUT', token, body: { records } });
@@ -687,7 +687,13 @@ describe('profil sportif : records et seuils', () => {
     // 5 km en 2 minutes : faute de frappe probable
     assert.equal((await envoyer(athlete.token, [{ distance: '5k', tempsSec: 120 }])).status, 400);
     assert.equal((await envoyer(athlete.token, [{ distance: '15k', tempsSec: 3600 }])).status, 400);
-    assert.equal((await envoyer(coach.token, RECORDS)).status, 403);
+    // Le coach enregistre ses records à lui (son entraînement), pas ceux de son athlète
+    assert.equal((await envoyer(coach.token, RECORDS)).status, 200);
+    assert.equal((await api('profil', { token: athlete.token })).body.records.length, 0);
+    assert.equal(
+      (await api(`profil?athleteId=${coach.user.id}`, { token: coach.token })).body.records.length,
+      4,
+    );
   });
 
   test('le coach estime SV1 / SV2, l’athlète les voit sans pouvoir les modifier', async () => {
@@ -735,6 +741,86 @@ describe('profil sportif : records et seuils', () => {
       token: autreCoach.token,
     });
     assert.equal(lectureAutre.status, 403);
+  });
+});
+
+describe('entraînement du coach', () => {
+  const periode = 'from=2026-10-26&to=2026-11-01';
+
+  test('le coach planifie ses propres séances et en fait le retour', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const moi = coach.user.id;
+    const creation = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: moi },
+    });
+    assert.equal(creation.status, 201);
+    assert.equal(creation.body.athleteId, moi);
+
+    const lecture = await api(`seances?athleteId=${moi}&${periode}`, { token: coach.token });
+    assert.equal(lecture.status, 200);
+    assert.equal(lecture.body.length, 1);
+
+    const retour = await api(`seances/${creation.body.id}/retour`, {
+      method: 'POST',
+      token: coach.token,
+      body: { statut: 'realisee', difficulte: 6, forme: 7 },
+    });
+    assert.equal(retour.status, 200);
+    assert.equal(retour.body.statut, 'realisee');
+
+    // L'athlète du coach ne voit pas les séances de son coach
+    const vuParAthlete = await api(`seances?athleteId=${moi}&${periode}`, { token: athlete.token });
+    assert.deepEqual(vuParAthlete.body, []);
+  });
+
+  test('le coach a son profil (records, seuils), invisible pour un autre coach', async () => {
+    const coach = await creerCompte('coach');
+    const autreCoach = await creerCompte('coach');
+    const moi = coach.user.id;
+    const seuils = await api(`profil/seuils/${moi}`, {
+      method: 'PUT',
+      token: coach.token,
+      body: { sv1Allure: 290, sv2Allure: 250 },
+    });
+    assert.equal(seuils.status, 200);
+    assert.equal(
+      (await api(`profil?athleteId=${moi}`, { token: coach.token })).body.seuils.sv2Allure,
+      250,
+    );
+    assert.equal((await api(`profil?athleteId=${moi}`, { token: autreCoach.token })).status, 403);
+    assert.equal(
+      (await api(`seances?athleteId=${moi}&${periode}`, { token: autreCoach.token })).status,
+      403,
+    );
+    const pourAutre = await api('seances', {
+      method: 'POST',
+      token: autreCoach.token,
+      body: { ...SEANCE, athleteId: moi },
+    });
+    assert.equal(pourAutre.status, 403);
+  });
+
+  test('le coach ne fait pas le retour des séances de ses athlètes, ni ne s’écrit', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const seance = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: athlete.user.id },
+    });
+    const retour = await api(`seances/${seance.body.id}/retour`, {
+      method: 'POST',
+      token: coach.token,
+      body: { statut: 'realisee', difficulte: 6, forme: 7 },
+    });
+    assert.equal(retour.status, 404);
+    const message = await api('messages', {
+      method: 'POST',
+      token: coach.token,
+      body: { athleteId: coach.user.id, contenu: 'Note pour moi' },
+    });
+    assert.equal(message.status, 403);
   });
 });
 

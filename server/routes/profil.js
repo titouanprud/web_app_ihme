@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
-import { verifierAthleteDuCoach } from '../liens.js';
+import { verifierAccesAthlete } from '../liens.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
 import * as valider from '../validation.js';
 
 // Profil sportif d'un athlète :
 // - records sur 5 km, 10 km, semi et marathon : saisis par l'athlète, visibles par son coach ;
 // - seuils SV1 / SV2 : estimés par le coach, visibles (sans modification) par l'athlète.
+// Un coach a aussi son propre profil (son entraînement) : il saisit ses records et ses seuils.
 const router = Router();
 
 // Temps acceptés pour chaque distance, en secondes (bornes larges pour éviter les fautes de frappe)
@@ -35,19 +36,21 @@ export async function lireProfil(athleteId) {
 }
 
 // GET /api/profil?athleteId= : l'athlète lit son profil, le coach celui d'un de ses athlètes
+// (ou le sien avec son propre id)
 router.get('/', requireAuth, async (req, res) => {
   let athleteId = req.user.id;
   if (req.user.role === 'coach') {
     athleteId = valider.identifiant(req.query.athleteId, "L'athlète (athleteId)");
-    await verifierAthleteDuCoach(req.user.id, athleteId);
+    await verifierAccesAthlete(req.user.id, athleteId);
   }
   res.json(await lireProfil(athleteId));
 });
 
-// PUT /api/profil/records : l'athlète enregistre ses records.
+// PUT /api/profil/records : l'utilisateur connecté (athlète, ou coach pour lui-même)
+// enregistre ses propres records.
 // Corps : { records: [{ distance: '10k', tempsSec: 2700, date: '2026-04-12' | null }, …] }
 // La liste remplace les records précédents (une distance absente est effacée).
-router.put('/records', requireAuth, requireRole('athlete'), async (req, res) => {
+router.put('/records', requireAuth, async (req, res) => {
   const liste = req.body?.records;
   if (!Array.isArray(liste)) throw new HttpError(400, 'Les records doivent être une liste.');
 
@@ -89,7 +92,7 @@ router.put('/records', requireAuth, requireRole('athlete'), async (req, res) => 
 // Allures en secondes par km, FC en battements par minute ; chaque valeur est facultative.
 router.put('/seuils/:athleteId', requireAuth, requireRole('coach'), async (req, res) => {
   const athleteId = valider.identifiant(req.params.athleteId, "L'athlète");
-  await verifierAthleteDuCoach(req.user.id, athleteId);
+  await verifierAccesAthlete(req.user.id, athleteId);
 
   const body = req.body ?? {};
   const allure = { min: 120, max: 1200, optionnel: true };

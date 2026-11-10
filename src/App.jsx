@@ -53,6 +53,14 @@ export default function App() {
           }
         />
         <Route
+          path="/coach/mon-entrainement"
+          element={
+            <RequireRole role="coach">
+              <CoachAthletePage moi />
+            </RequireRole>
+          }
+        />
+        <Route
           path="/athlete"
           element={
             <RequireRole role="athlete">

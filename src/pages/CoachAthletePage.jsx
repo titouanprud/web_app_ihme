@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { debutSemaine, formaterDate } from '../dates.js';
 import { useSeancesSemaine } from '../useSeancesSemaine.js';
 import DupliquerForm from '../components/DupliquerForm.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
 import NouvelleSeance from '../components/NouvelleSeance.jsx';
+import RetourForm from '../components/RetourForm.jsx';
 import { ProfilAthleteCoach, useProfil } from '../components/ProfilSportif.jsx';
 import SeanceDetails from '../components/SeanceDetails.jsx';
 import SeanceForm from '../components/SeanceForm.jsx';
@@ -14,8 +16,12 @@ import WeekCalendar, { WeekNav } from '../components/WeekCalendar.jsx';
 
 // Calendrier d'un athlète vu par son coach : création, modification, duplication,
 // suppression, enregistrement comme modèle et lecture des retours.
-export default function CoachAthletePage() {
-  const { athleteId } = useParams();
+// moi = true : « Mon entraînement », le calendrier du coach lui-même (athleteId = son id).
+// Il y fait aussi le retour de ses séances et saisit ses propres records.
+export default function CoachAthletePage({ moi = false }) {
+  const { user } = useAuth();
+  const params = useParams();
+  const athleteId = moi ? String(user.id) : params.athleteId;
   const [athletes, setAthletes] = useState(null);
   const [erreurAthlete, setErreurAthlete] = useState('');
   const [lundi, setLundi] = useState(debutSemaine());
@@ -42,7 +48,10 @@ export default function CoachAthletePage() {
       .catch((err) => setErreurAthlete(err.message));
   }, []);
 
-  const athlete = athletes?.find((a) => String(a.id) === athleteId);
+  // Le coach peut dupliquer une séance vers un de ses athlètes ou vers lui-même
+  const moiCommeAthlete = { id: user.id, prenom: user.prenom, nom: `${user.nom} (moi)` };
+  const destinataires = athletes ? [moiCommeAthlete, ...athletes] : null;
+  const athlete = destinataires?.find((a) => String(a.id) === athleteId);
 
   async function creer(valeurs) {
     await api('seances', { method: 'POST', body: { ...valeurs, athleteId: Number(athleteId) } });
@@ -63,8 +72,18 @@ export default function CoachAthletePage() {
     });
     recharger();
     voir(fenetre.seance);
-    const pour = athletes.find((a) => a.id === copie.athleteId);
+    const pour = destinataires.find((a) => a.id === copie.athleteId);
     setMessage(`Copie créée le ${formaterDate(copie.date)} pour ${pour.prenom} ${pour.nom}.`);
+  }
+
+  // Retour du coach sur une de ses propres séances
+  async function envoyerRetour(retour) {
+    const seance = await api(`seances/${fenetre.seance.id}/retour`, {
+      method: 'POST',
+      body: retour,
+    });
+    setFenetre({ mode: 'voir', seance });
+    recharger();
   }
 
   async function enregistrerModele(seance) {
@@ -107,13 +126,13 @@ export default function CoachAthletePage() {
         ← Mes athlètes
       </Link>
       <div className="page-entete">
-        <h1>
-          {athlete.prenom} {athlete.nom}
-        </h1>
+        <h1>{moi ? 'Mon entraînement' : `${athlete.prenom} ${athlete.nom}`}</h1>
         <div className="page-actions">
-          <Link to={`/coach/athletes/${athleteId}/messages`} className="btn btn-ghost">
-            Messages
-          </Link>
+          {!moi && (
+            <Link to={`/coach/athletes/${athleteId}/messages`} className="btn btn-ghost">
+              Messages
+            </Link>
+          )}
           <button
             type="button"
             className="btn btn-primary"
@@ -129,6 +148,7 @@ export default function CoachAthletePage() {
         profil={profil}
         setProfil={setProfil}
         erreur={erreurProfil}
+        moi={moi}
       />
       <WeekNav lundi={lundi} onChange={setLundi} />
       <ErrorMessage message={error} />
@@ -148,6 +168,9 @@ export default function CoachAthletePage() {
       {fenetre?.mode === 'voir' && (
         <Modal titre={fenetre.seance.titre} onClose={fermer}>
           <SeanceDetails seance={fenetre.seance} />
+          {moi && (
+            <RetourForm key={fenetre.seance.id} seance={fenetre.seance} onSubmit={envoyerRetour} />
+          )}
           {message && (
             <p className="success" role="status">
               {message}
@@ -199,7 +222,7 @@ export default function CoachAthletePage() {
         <Modal titre="Dupliquer la séance" onClose={fermer}>
           <DupliquerForm
             seance={fenetre.seance}
-            athletes={athletes}
+            athletes={destinataires}
             onSubmit={dupliquer}
             onCancel={() => voir(fenetre.seance)}
           />

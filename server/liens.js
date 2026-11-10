@@ -15,6 +15,14 @@ export async function verifierAthleteDuCoach(coachId, athleteId) {
   if (rowCount === 0) throw new HttpError(403, 'Cet athlète ne fait pas partie de votre groupe.');
 }
 
+// Accès au calendrier et au profil sportif d'un "athlète" pour un coach :
+// ses athlètes acceptés, et lui-même (son propre entraînement : athleteId = son id).
+// La messagerie, elle, reste réservée aux vrais binômes (verifierAthleteDuCoach).
+export async function verifierAccesAthlete(coachId, athleteId) {
+  if (athleteId === coachId) return;
+  await verifierAthleteDuCoach(coachId, athleteId);
+}
+
 // Renvoie l'id du coach de l'athlète, ou une erreur 403 s'il n'en a pas encore.
 export async function coachDeLAthlete(athleteId) {
   const { rows } = await pool.query(

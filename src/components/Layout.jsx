@@ -27,6 +27,7 @@ export default function Layout() {
                       libelle="nouveautés"
                     />
                   </NavLink>
+                  <NavLink to="/coach/mon-entrainement">Mon entraînement</NavLink>
                   <NavLink to="/bibliotheque">Bibliothèque</NavLink>
                 </>
               ) : (

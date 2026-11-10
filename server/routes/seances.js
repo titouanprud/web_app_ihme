@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { SPORTS, SPORTS_AVEC_DPLUS, validerBlocs } from '../blocs.js';
 import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
-import { verifierAthleteDuCoach } from '../liens.js';
+import { verifierAccesAthlete } from '../liens.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
 import { estimerBlocs, referencesSansAllure, resoudreReferences } from '../partage/estimation.js';
 import * as valider from '../validation.js';
@@ -104,7 +104,7 @@ export async function completerAllures(blocs, athleteId) {
 }
 
 // GET /api/seances?athleteId=&from=&to= : séances sur une période
-// - un coach doit préciser athleteId, qui doit être un de ses athlètes ;
+// - un coach doit préciser athleteId : un de ses athlètes, ou lui-même (son entraînement) ;
 // - un athlète voit toujours ses propres séances (athleteId est ignoré).
 router.get('/', requireAuth, async (req, res) => {
   const from = valider.dateISO(req.query.from, 'La date de début (from)');
@@ -115,7 +115,7 @@ router.get('/', requireAuth, async (req, res) => {
   let params;
   if (req.user.role === 'coach') {
     const athleteId = valider.identifiant(req.query.athleteId, "L'athlète (athleteId)");
-    await verifierAthleteDuCoach(req.user.id, athleteId);
+    await verifierAccesAthlete(req.user.id, athleteId);
     filtre = 's.athlete_id = $1 AND s.coach_id = $2';
     params = [athleteId, req.user.id];
   } else {
@@ -132,11 +132,12 @@ router.get('/', requireAuth, async (req, res) => {
   res.json(rows);
 });
 
-// POST /api/seances : le coach crée une séance pour un de ses athlètes
+// POST /api/seances : le coach crée une séance pour un de ses athlètes ou pour lui-même
+// (athlete_id = coach_id : pas de validation nécessaire)
 router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
   const athleteId = valider.identifiant(req.body?.athleteId, "L'athlète");
   const s = lireSeance(req.body);
-  await verifierAthleteDuCoach(req.user.id, athleteId);
+  await verifierAccesAthlete(req.user.id, athleteId);
   const blocs = await completerAllures(s.blocs, athleteId);
 
   const { rows } = await pool.query(
@@ -204,7 +205,7 @@ router.post('/:id/dupliquer', requireAuth, requireRole('coach'), async (req, res
   const id = valider.identifiant(req.params.id);
   const date = valider.dateISO(req.body?.date, 'La date');
   const athleteId = valider.identifiant(req.body?.athleteId, "L'athlète");
-  await verifierAthleteDuCoach(req.user.id, athleteId);
+  await verifierAccesAthlete(req.user.id, athleteId);
 
   // INSERT … SELECT : copie directe en base ; "WHERE coach_id" protège les séances des autres coachs
   const { rows } = await pool.query(
@@ -234,8 +235,9 @@ router.delete('/:id', requireAuth, requireRole('coach'), async (req, res) => {
 
 // POST /api/seances/:id/retour : l'athlète indique si la séance est faite et donne son retour
 // (difficulté de la séance et forme ressentie de 1 à 10, commentaire).
-// Un nouvel envoi remplace le retour précédent.
-router.post('/:id/retour', requireAuth, requireRole('athlete'), async (req, res) => {
+// Un nouvel envoi remplace le retour précédent. Pas de restriction de rôle : la condition
+// athlete_id = utilisateur connecté suffit (un coach fait ainsi le retour de ses propres séances).
+router.post('/:id/retour', requireAuth, async (req, res) => {
   const id = valider.identifiant(req.params.id);
   const body = req.body ?? {};
   const statut = valider.choix(body.statut, 'Le statut', ['realisee', 'non_realisee']);

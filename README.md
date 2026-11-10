@@ -17,7 +17,7 @@ Projet réalisé seul dans le cadre d'un master. Rendu sur GitHub.
 
 | Rôle | Ce qu'il peut faire |
 |------|---------------------|
-| **Coach** | Gérer ses athlètes, créer / modifier / supprimer des séances, consulter les retours |
+| **Coach** | Gérer ses athlètes, créer / modifier / supprimer des séances, consulter les retours ; planifier aussi son propre entraînement |
 | **Athlète** | Voir son calendrier de séances, marquer une séance comme faite, laisser un retour (ressenti, commentaire) |
 
 Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi à l'inscription.
@@ -41,6 +41,7 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Voir le calendrier (vue semaine) d'un athlète avec le statut de chaque séance.
 - Lire les retours des athlètes.
 - Consulter les records de ses athlètes et saisir son estimation de leurs seuils **SV1 / SV2** (allure et FC).
+- **Mon entraînement** : le coach se planifie des séances (sans validation), a son propre profil sportif (records, seuils) et fait le retour de ses séances.
 
 **Athlète**
 - Choisir son coach parmi les comptes coach existants ; le lien est créé quand le coach accepte la demande.
@@ -140,13 +141,13 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | PUT | `/api/seances/:id` | coach | Modifier une séance |
 | DELETE | `/api/seances/:id` | coach | Supprimer une séance |
 | POST | `/api/seances/:id/dupliquer` | coach | Copier une séance (autre date, autre athlète) |
-| POST | `/api/seances/:id/retour` | athlète | Envoyer son retour |
+| POST | `/api/seances/:id/retour` | celui dont c'est la séance | Envoyer son retour |
 | GET | `/api/seances-types` | coach | Modèles de sa bibliothèque |
 | POST | `/api/seances-types` | coach | Ajouter un modèle |
 | PUT | `/api/seances-types/:id` | coach | Modifier un modèle |
 | DELETE | `/api/seances-types/:id` | coach | Supprimer un modèle |
 | GET | `/api/profil?athleteId=` | coach / athlète | Records et seuils d'un athlète |
-| PUT | `/api/profil/records` | athlète | Enregistrer ses records |
+| PUT | `/api/profil/records` | connecté | Enregistrer ses propres records (athlète, ou coach pour lui-même) |
 | PUT | `/api/profil/seuils/:athleteId` | coach | Enregistrer son estimation de SV1 / SV2 |
 
 ## 8. Structure du dépôt
@@ -223,6 +224,7 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 
 ## 12. Décisions prises
 - Un athlète a **un seul coach** ; un coach peut avoir plusieurs athlètes.
+- **Entraînement du coach** : ses séances ont `athlete_id = coach_id`. La fonction `verifierAccesAthlete` (`server/liens.js`) autorise un coach sur ses athlètes acceptés **et** sur lui-même (séances, profil, totaux, cycles) ; la messagerie reste limitée aux vrais binômes. Le retour d'une séance est autorisé à l'utilisateur dont c'est la séance (`athlete_id`), quel que soit son rôle.
 - Le sport de la séance est choisi dans une liste (course à pied, vélo, ski-alpinisme, renforcement, autre) : il détermine les cibles possibles des blocs (allure ou zone en course, puissance ou zone à vélo, zone en ski-alpinisme).
 - **D+** : chaque bloc peut avoir un D+ visé (0 à 10 000 m) en course, vélo et ski-alpinisme. Le D+ de la séance est la somme des blocs (répétitions comprises) ; si aucun bloc n'en a, le coach le saisit directement (20 000 m maximum).
 - **Allures de référence** (course à pied) : une cible `reference` (`@5k`, `@10k`, `@21k`, `@42k`, `@SV1`, `@SV2`) copie dans le bloc l'allure calculée depuis le profil de l'athlète (temps du record ÷ distance, semi = 21,0975 km, marathon = 42,195 km ; ou seuil SV1 / SV2 du coach). Le coach peut la changer (`modifiee: true`, marquée d'un astérisque). Si le profil ne contient pas la valeur, le serveur refuse la séance tant que le coach n'a pas saisi l'allure. Un modèle du catalogue garde seulement la référence ; le serveur calcule l'allure quand la séance est créée pour un athlète.

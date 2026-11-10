@@ -265,7 +265,8 @@ export function SeuilsForm({ athleteId, seuils, onEnregistre }) {
 
 // Bloc "Profil sportif" affiché sur la page d'un athlète côté coach.
 // Le profil est chargé par la page (useProfil), qui s'en sert aussi pour les allures de référence.
-export function ProfilAthleteCoach({ athleteId, profil, setProfil, erreur }) {
+// moi = true : profil du coach lui-même, qui saisit aussi ses records.
+export function ProfilAthleteCoach({ athleteId, profil, setProfil, erreur, moi = false }) {
   return (
     <details className="carte profil-coach">
       <summary>
@@ -277,11 +278,15 @@ export function ProfilAthleteCoach({ athleteId, profil, setProfil, erreur }) {
       {profil && (
         <div className="profil-coach-contenu">
           <section>
-            <h3>Records de l’athlète</h3>
-            <RecordsLecture records={profil.records} />
+            <h3>{moi ? 'Mes records' : 'Records de l’athlète'}</h3>
+            {moi ? (
+              <RecordsForm records={profil.records} onEnregistre={setProfil} />
+            ) : (
+              <RecordsLecture records={profil.records} />
+            )}
           </section>
           <section>
-            <h3>Mon estimation des seuils</h3>
+            <h3>{moi ? 'Mes seuils' : 'Mon estimation des seuils'}</h3>
             <SeuilsForm athleteId={athleteId} seuils={profil.seuils} onEnregistre={setProfil} />
           </section>
         </div>
