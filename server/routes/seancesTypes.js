@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { initialiserCatalogue } from '../catalogueDepart.js';
 import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
@@ -13,8 +14,10 @@ router.use(requireAuth, requireRole('coach'));
 const COLONNES = `id, titre, sport, type, duree_prevue_min AS "dureePrevueMin",
   dplus_prevu_m AS "dplusPrevuM", description, blocs`;
 
-// GET /api/seances-types : les modèles du coach connecté
+// GET /api/seances-types : les modèles du coach connecté.
+// Au premier affichage, un coach créé avant le catalogue de départ le reçoit.
 router.get('/', async (req, res) => {
+  await initialiserCatalogue(req.user.id);
   const { rows } = await pool.query(
     `SELECT ${COLONNES} FROM seances_types WHERE coach_id = $1 ORDER BY titre, id`,
     [req.user.id],

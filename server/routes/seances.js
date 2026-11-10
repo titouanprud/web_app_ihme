@@ -257,6 +257,30 @@ router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   res.json(await trouverSeance(id));
 });
 
+// POST /api/seances/depuis-modele : le coach glisse un modèle du catalogue sur un jour.
+// Corps : { modeleId, athleteId, date }. Une COPIE du modèle est créée pour l'athlète à cette
+// date (le modèle ne change pas) ; les allures de référence sont calculées avec son profil.
+router.post('/depuis-modele', requireAuth, requireRole('coach'), async (req, res) => {
+  const modeleId = valider.identifiant(req.body?.modeleId, 'Le modèle');
+  const athleteId = valider.identifiant(req.body?.athleteId, "L'athlète");
+  const date = valider.dateISO(req.body?.date, 'La date');
+  await verifierAccesAthlete(req.user.id, athleteId);
+
+  const { rows } = await pool.query(
+    `SELECT titre, sport, type, duree_prevue_min AS "dureePrevueMin",
+            dplus_prevu_m AS "dplusPrevuM", description, blocs
+     FROM seances_types WHERE id = $1 AND coach_id = $2`,
+    [modeleId, req.user.id],
+  );
+  if (!rows[0]) throw new HttpError(404, 'Modèle introuvable.');
+
+  // Le modèle repasse par les mêmes vérifications qu'une séance saisie à la main
+  const s = lireSeance({ ...rows[0], date });
+  s.blocs = await completerAllures(s.blocs, athleteId);
+  const id = await insererSeance(req.user.id, athleteId, s);
+  res.status(201).json(await trouverSeance(id));
+});
+
 // POST /api/seances/:id/dupliquer : le coach copie une de ses séances à une autre date,
 // pour le même athlète ou un autre de ses athlètes. La copie repart au statut "prevue".
 router.post('/:id/dupliquer', requireAuth, requireRole('coach'), async (req, res) => {

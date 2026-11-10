@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { initialiserCatalogue } from '../catalogueDepart.js';
 import { pool } from '../db.js';
 import { HttpError } from '../errors.js';
 import { signToken } from '../jwt.js';
@@ -31,6 +32,8 @@ router.post('/register', async (req, res) => {
       [email, hash, prenom, nom, role],
     );
     const user = rows[0];
+    // Un nouveau coach reçoit quelques modèles de séances pour démarrer
+    if (role === 'coach') await initialiserCatalogue(user.id);
     res.status(201).json({ token: signToken(user), user: { ...user, coach: null } });
   } catch (err) {
     // 23505 = violation de contrainte UNIQUE (email déjà utilisé)

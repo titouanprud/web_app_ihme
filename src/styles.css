@@ -1464,3 +1464,131 @@ a.btn {
     padding: 0.4rem 0.5rem;
   }
 }
+
+/* ===== Planification : catalogue à gauche, calendrier à droite ===== */
+.planification {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.planification-calendrier {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.catalogue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  position: sticky;
+  top: 4.5rem;
+  max-height: calc(100vh - 5.5rem);
+  overflow-y: auto;
+}
+.catalogue-entete {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.catalogue-aide {
+  font-size: 0.78rem;
+  margin: 0;
+}
+.catalogue-onglets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.catalogue-onglet {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--bordure);
+  border-left: 3px solid var(--sport);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.catalogue-onglet.actif {
+  background: var(--primaire-clair);
+  border-color: var(--primaire);
+  border-left-color: var(--sport);
+  font-weight: 600;
+}
+.catalogue .recherche {
+  width: 100%;
+}
+.catalogue-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.catalogue-modele {
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--bordure);
+  border-left: 4px solid var(--sport);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 0.82rem;
+  cursor: grab;
+}
+.catalogue-modele .texte-discret {
+  font-size: 0.72rem;
+}
+.catalogue-detail {
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* Glisser-déposer */
+.deplacable {
+  cursor: grab;
+  /* Sur écran tactile : pas de menu « copier » ou de zoom pendant l'appui long */
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.en-deplacement {
+  opacity: 0.4;
+}
+.zone-survolee {
+  outline: 2px dashed var(--primaire);
+  outline-offset: -2px;
+  background: var(--primaire-clair) !important;
+}
+.apercu-glisse {
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  background: var(--primaire);
+  color: white;
+  font-weight: 600;
+  font-size: 0.85rem;
+  box-shadow: 0 6px 16px rgba(16, 24, 40, 0.25);
+  cursor: grabbing;
+  width: max-content;
+  max-width: 240px;
+}
+
+@media (max-width: 900px) {
+  /* Sur petit écran, le catalogue passe au-dessus du calendrier */
+  .planification {
+    grid-template-columns: 1fr;
+  }
+  .catalogue {
+    position: static;
+    max-height: 320px;
+  }
+}

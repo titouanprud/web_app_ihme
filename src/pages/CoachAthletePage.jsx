@@ -1,9 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { formaterDate, toISODate } from '../dates.js';
+import { useCatalogue } from '../useCatalogue.js';
 import Calendrier from '../components/Calendrier.jsx';
+import Catalogue from '../components/Catalogue.jsx';
 import DupliquerForm from '../components/DupliquerForm.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
@@ -14,7 +25,8 @@ import SeanceDetails from '../components/SeanceDetails.jsx';
 import SeanceForm from '../components/SeanceForm.jsx';
 
 // Calendrier d'un athlète vu par son coach : création, modification, duplication,
-// suppression, enregistrement comme modèle et lecture des retours.
+// suppression, ajout au catalogue et lecture des retours. Le catalogue, à gauche, se glisse
+// sur un jour du calendrier ; une séance se glisse aussi d'un jour à un autre.
 // moi = true : « Mon entraînement », le calendrier du coach lui-même (athleteId = son id).
 // Il y fait aussi le retour de ses séances et saisit ses propres records.
 export default function CoachAthletePage({ moi = false }) {
@@ -28,6 +40,16 @@ export default function CoachAthletePage({ moi = false }) {
   const recharger = () => setVersion((v) => v + 1);
   // Profil de l'athlète (records, seuils) : affiché, et utilisé pour les allures @10k, @SV1…
   const { profil, setProfil, erreur: erreurProfil } = useProfil(athleteId);
+  const catalogue = useCatalogue();
+
+  // Glisser-déposer : la souris démarre après 6 px de mouvement (un simple clic ouvre toujours
+  // la séance) ; au doigt, après un appui de 200 ms (un glissement rapide fait défiler la page).
+  const capteurs = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+  const [enDeplacement, setEnDeplacement] = useState(null); // modèle ou séance déplacé
+  const [erreurDepot, setErreurDepot] = useState('');
 
   // Fenêtre ouverte : null ou { mode, seance?, date? }
   // modes : 'creer', 'voir', 'modifier', 'dupliquer'
@@ -86,12 +108,41 @@ export default function CoachAthletePage({ moi = false }) {
     recharger();
   }
 
-  async function enregistrerModele(seance) {
+  async function ajouterAuCatalogue(seance) {
     try {
-      await api('seances-types', { method: 'POST', body: seance });
-      setMessage('Séance ajoutée à votre bibliothèque.');
+      await catalogue.creer(seance);
+      setMessage('Séance ajoutée au catalogue.');
     } catch (err) {
       window.alert(err.message);
+    }
+  }
+
+  // Fin d'un glisser-déposer : "active" = ce qui est déplacé, "over" = le jour visé (ou null)
+  async function deposer({ active, over }) {
+    setEnDeplacement(null);
+    if (!over) return;
+    const date = over.data.current.date;
+    const objet = active.data.current;
+    setErreurDepot('');
+    try {
+      if (objet.type === 'modele') {
+        // Copie du modèle pour cet athlète à cette date (le modèle ne change pas)
+        await api('seances/depuis-modele', {
+          method: 'POST',
+          body: { modeleId: objet.modele.id, athleteId: Number(athleteId), date },
+        });
+      } else if (objet.seance.date !== date) {
+        // Déplacement d'une séance existante : même contenu, nouvelle date
+        await api(`seances/${objet.seance.id}`, {
+          method: 'PUT',
+          body: { ...objet.seance, date },
+        });
+      } else {
+        return;
+      }
+      recharger();
+    } catch (err) {
+      setErreurDepot(err.message);
     }
   }
 
@@ -150,12 +201,35 @@ export default function CoachAthletePage({ moi = false }) {
         erreur={erreurProfil}
         moi={moi}
       />
-      <Calendrier
-        athleteId={athleteId}
-        version={version}
-        onOuvrir={voir}
-        onAjouter={(date) => setFenetre({ mode: 'creer', date })}
-      />
+      {/* pointerWithin : la séance est déposée sur le jour qui se trouve sous le pointeur */}
+      <DndContext
+        sensors={capteurs}
+        collisionDetection={pointerWithin}
+        onDragStart={({ active }) => {
+          const objet = active.data.current;
+          setEnDeplacement(objet.modele ?? objet.seance);
+        }}
+        onDragEnd={deposer}
+        onDragCancel={() => setEnDeplacement(null)}
+      >
+        <div className="planification">
+          <Catalogue catalogue={catalogue} />
+          <div className="planification-calendrier">
+            <ErrorMessage message={erreurDepot} />
+            <Calendrier
+              athleteId={athleteId}
+              version={version}
+              onOuvrir={voir}
+              onAjouter={(date) => setFenetre({ mode: 'creer', date })}
+              glisserDeposer
+            />
+          </div>
+        </div>
+        {/* Aperçu qui suit le pointeur pendant le déplacement */}
+        <DragOverlay>
+          {enDeplacement && <div className="apercu-glisse">{enDeplacement.titre}</div>}
+        </DragOverlay>
+      </DndContext>
 
       {fenetre?.mode === 'creer' && (
         <Modal titre="Nouvelle séance" onClose={fermer} large>
@@ -184,9 +258,9 @@ export default function CoachAthletePage({ moi = false }) {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => enregistrerModele(fenetre.seance)}
+              onClick={() => ajouterAuCatalogue(fenetre.seance)}
             >
-              Enregistrer comme modèle
+              Ajouter au catalogue
             </button>
             <button
               type="button"

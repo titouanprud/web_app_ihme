@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { createApp } from '../server/app.js';
 import { pool } from '../server/db.js';
 import { migrate } from '../server/migrate.js';
+import { MODELES_DE_DEPART } from '../server/catalogueDepart.js';
 import { loadJwtSecret } from '../server/jwt.js';
 import {
   allureDeReference,
@@ -621,8 +622,15 @@ describe('duplication et bibliothèque', () => {
 
     const cree = await api('seances-types', { method: 'POST', token: coach.token, body: modele });
     assert.equal(cree.status, 201);
-    assert.equal((await api('seances-types', { token: coach.token })).body.length, 1);
-    assert.deepEqual((await api('seances-types', { token: autreCoach.token })).body, []);
+    // Le catalogue contient les modèles de départ + le nouveau ; l'autre coach ne le voit pas
+    const nombreDepart = MODELES_DE_DEPART.length;
+    assert.equal(
+      (await api('seances-types', { token: coach.token })).body.length,
+      nombreDepart + 1,
+    );
+    const chezAutre = (await api('seances-types', { token: autreCoach.token })).body;
+    assert.equal(chezAutre.length, nombreDepart);
+    assert.ok(!chezAutre.some((m) => m.id === cree.body.id));
 
     const chemin = `seances-types/${cree.body.id}`;
     const modifAutre = await api(chemin, {
@@ -645,6 +653,89 @@ describe('duplication et bibliothèque', () => {
   test('un athlète n’a pas accès à la bibliothèque', async () => {
     const athlete = await creerCompte('athlete');
     assert.equal((await api('seances-types', { token: athlete.token })).status, 403);
+  });
+});
+
+describe('catalogue de départ et glisser-déposer', () => {
+  test('un nouveau coach reçoit le catalogue de départ une seule fois', async () => {
+    const coach = await creerCompte('coach');
+    const catalogue = (await api('seances-types', { token: coach.token })).body;
+    assert.equal(catalogue.length, MODELES_DE_DEPART.length);
+    for (const sport of ['course', 'velo', 'ski_alpi', 'renfo']) {
+      assert.ok(
+        catalogue.some((m) => m.sport === sport),
+        `aucun modèle de ${sport}`,
+      );
+    }
+    // Il supprime tout : les modèles ne reviennent pas au prochain affichage
+    for (const m of catalogue) {
+      await api(`seances-types/${m.id}`, { method: 'DELETE', token: coach.token });
+    }
+    assert.deepEqual((await api('seances-types', { token: coach.token })).body, []);
+  });
+
+  test('un coach créé avant le catalogue le reçoit au premier affichage', async () => {
+    const coach = await creerCompte('coach');
+    // On simule un compte ancien : pas de modèle, drapeau à false
+    await pool.query('DELETE FROM seances_types WHERE coach_id = $1', [coach.user.id]);
+    await pool.query('UPDATE users SET catalogue_initialise = false WHERE id = $1', [
+      coach.user.id,
+    ]);
+    const catalogue = await api('seances-types', { token: coach.token });
+    assert.equal(catalogue.body.length, MODELES_DE_DEPART.length);
+    // Deux affichages de suite ne le dupliquent pas
+    assert.equal(
+      (await api('seances-types', { token: coach.token })).body.length,
+      MODELES_DE_DEPART.length,
+    );
+  });
+
+  test('glisser un modèle crée une copie avec les allures du profil de l’athlète', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const modele = (await api('seances-types', { token: coach.token })).body.find(
+      (m) => m.titre === '10 × 400 m @5k',
+    );
+    const deposer = (body, token = coach.token) =>
+      api('seances/depuis-modele', { method: 'POST', token, body });
+    const corps = { modeleId: modele.id, athleteId: athlete.user.id, date: '2026-11-12' };
+
+    // Pas de record sur 5 km : le coach doit d'abord le connaître
+    const sansRecord = await deposer(corps);
+    assert.equal(sansRecord.status, 400);
+    assert.match(sansRecord.body.error, /@5k/);
+
+    await api('profil/records', {
+      method: 'PUT',
+      token: athlete.token,
+      body: { records: [{ distance: '5k', tempsSec: 20 * 60 }] }, // 4:00 /km
+    });
+    const copie = await deposer(corps);
+    assert.equal(copie.status, 201);
+    assert.equal(copie.body.date, '2026-11-12');
+    assert.equal(copie.body.athleteId, athlete.user.id);
+    assert.equal(copie.body.blocs[1].blocs[0].cible.allure_sec, 240);
+    assert.ok(copie.body.distanceEstimeeM > 0);
+
+    // Le modèle n'a pas changé : toujours sans allure
+    const apres = (await api('seances-types', { token: coach.token })).body.find(
+      (m) => m.id === modele.id,
+    );
+    assert.equal(apres.blocs[1].blocs[0].cible.allure_sec, null);
+  });
+
+  test('modèle d’un autre coach, athlète d’un autre coach ou athlète connecté : refusé', async () => {
+    const a = await creerCoachEtAthlete();
+    const b = await creerCoachEtAthlete();
+    const modeleDeA = (await api('seances-types', { token: a.coach.token })).body[0];
+    const deposer = (token, modeleId, athleteId) =>
+      api('seances/depuis-modele', {
+        method: 'POST',
+        token,
+        body: { modeleId, athleteId, date: '2026-11-12' },
+      });
+    assert.equal((await deposer(b.coach.token, modeleDeA.id, b.athlete.user.id)).status, 404);
+    assert.equal((await deposer(a.coach.token, modeleDeA.id, b.athlete.user.id)).status, 403);
+    assert.equal((await deposer(a.athlete.token, modeleDeA.id, a.athlete.user.id)).status, 403);
   });
 });
 

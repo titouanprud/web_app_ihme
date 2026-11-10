@@ -37,7 +37,7 @@ Chaque utilisateur a un compte (email + mot de passe) et un seul rôle, choisi �
 - Créer une séance pour un athlète : date, titre, sport, type (endurance, fractionné, renfo, repos…), consignes.
 - Construire la séance en **blocs** : échauffement, intervalle, récupération, retour au calme, et répétitions (ex. 6 × (1000 m + 2 min)). Chaque bloc se mesure en durée ou en distance, avec une cible : allure ou zone 1 à 5 en course à pied, puissance ou zone à vélo. Les blocs se réordonnent (↑ ↓), se dupliquent et se suppriment ; durée et distance totales sont calculées.
 - Modifier, supprimer et **dupliquer** une séance (autre date, autre athlète).
-- **Bibliothèque** de séances types réutilisables pour créer une séance en un clic.
+- **Catalogue** de séances types, affiché à gauche du calendrier de planification (un onglet par sport, recherche par titre). Glisser un modèle sur un jour crée une copie de la séance pour l'athlète (allures de référence calculées avec son profil) ; une séance existante se glisse aussi d'un jour à l'autre. Le coach ajoute un modèle (formulaire ou « Ajouter au catalogue » depuis une séance), le modifie ou le retire. Un catalogue de départ fictif (course, vélo, ski-alpinisme, renfo) est offert à chaque coach.
 - Voir le calendrier d'un athlète avec le statut de chaque séance, en vue **Jour, Semaine, Mois, Trimestre ou Année** (vue gardée dans l'adresse), avec les **totaux du prévu** : course (km, heures), vélo (km, heures), ski-alpinisme (heures, D+), renfo (heures), D+ total et temps total de sport, par semaine, par mois et sur la période.
 - Lire les retours des athlètes.
 - Consulter les records de ses athlètes et saisir son estimation de leurs seuils **SV1 / SV2** (allure et FC).
@@ -108,7 +108,7 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 
 ## 6. Modèle de données (première version)
 
-- **users** : id, email, mot_de_passe_hash, prénom, nom, rôle (`coach` | `athlete`), date_création
+- **users** : id, email, mot_de_passe_hash, prénom, nom, rôle (`coach` | `athlete`), date_création, catalogue_initialise (le coach a reçu le catalogue de départ)
 - **coach_athletes** : id, coach_id → users, athlete_id → users (unique : un athlète n'a qu'un coach), statut (`en_attente` | `acceptee` | `refusee`), date_ajout
 - **messages** : id, coach_id → users, athlete_id → users, auteur_id → users, contenu, date_envoi, lu
 - **seances** : id, coach_id, athlete_id, date, titre, sport (`course` | `velo` | `ski_alpi` | `renfo` | `autre`), type, durée_prévue_min, dplus_prevu_m (D+ en mètres), duree_estimee_sec et distance_estimee_m (calculées à l'enregistrement, pour les totaux), description, blocs (JSONB : liste des blocs, voir `server/blocs.js`), statut (`prévue` | `réalisée` | `non_réalisée`)
@@ -142,8 +142,9 @@ Navigateur ──► https://…/web-app-ihme/ ──► proxy du cours ──�
 | PUT | `/api/seances/:id` | coach | Modifier une séance |
 | DELETE | `/api/seances/:id` | coach | Supprimer une séance |
 | POST | `/api/seances/:id/dupliquer` | coach | Copier une séance (autre date, autre athlète) |
+| POST | `/api/seances/depuis-modele` | coach | Créer une séance à une date à partir d'un modèle du catalogue (glisser-déposer) |
 | POST | `/api/seances/:id/retour` | celui dont c'est la séance | Envoyer son retour |
-| GET | `/api/seances-types` | coach | Modèles de sa bibliothèque |
+| GET | `/api/seances-types` | coach | Modèles de son catalogue (crée le catalogue de départ au premier appel) |
 | POST | `/api/seances-types` | coach | Ajouter un modèle |
 | PUT | `/api/seances-types/:id` | coach | Modifier un modèle |
 | DELETE | `/api/seances-types/:id` | coach | Supprimer un modèle |
@@ -233,6 +234,8 @@ Les fichiers d'accès privés (`acces-p16.txt`, `deploy.curl`) ne doivent **jama
 - **Estimation** : avec une allure (fourchette : on prend le milieu), la distance d'un bloc en durée et la durée d'un bloc en distance sont calculées ; la séance affiche sa durée et sa distance estimées, répétitions comprises (« ≥ » si un bloc n'a pas d'allure).
 - **Totaux** : à chaque enregistrement, la séance garde sa durée et sa distance estimées (`server/partage/estimation.js` : durée des blocs si elle est complète, sinon la durée prévue saisie). Les totaux sont alors une seule requête `GROUP BY date_trunc('week' | 'month', date)` avec `sum(...) FILTER (WHERE sport = …)`. Les séances créées avant ces colonnes sont calculées une fois par la migration. Toutes les séances prévues comptent, quel que soit leur statut.
 - **Calendrier** : la vue et la date sont dans l'adresse (`?vue=mois&date=2026-11-10`). Les vues Mois, Trimestre et Année affichent des semaines complètes (lundi → dimanche). En Trimestre / Année, une semaine à cheval sur deux mois est rangée dans le mois de son jeudi (règle ISO 8601) ; les sous-totaux de mois, eux, comptent exactement les jours du mois. Sur mobile, ces grilles défilent horizontalement.
+- **Glisser-déposer** avec `@dnd-kit/core` plutôt que le glisser-déposer natif du navigateur, qui ne fonctionne pas au doigt. Principe : `<DndContext>` (page de planification) suit le pointeur et appelle `onDragEnd({ active, over })` quand on lâche ; `useDraggable` rend un modèle ou une séance déplaçable, `useDroppable` fait de chaque jour une zone de dépôt ; chacun porte des `data` (le modèle, la séance, la date). Le jour visé est celui sous le pointeur (`pointerWithin`). À la souris, le déplacement démarre après 6 px (un clic ouvre toujours la séance) ; au doigt, après un appui de 200 ms (un glissement rapide fait défiler la page). Déplacer une séance = la même modification qu'avec le formulaire (`PUT`), avec la nouvelle date.
+- **Catalogue de départ** (`server/catalogueDepart.js`) : ajouté à la création d'un compte coach, ou au premier affichage du catalogue pour les coachs existants. La colonne `users.catalogue_initialise` est passée à `true` dans la même transaction : un coach qui supprime ces modèles ne les voit pas revenir.
 - **Code partagé** : les calculs sur les blocs (durée, distance, D+) sont dans `server/partage/estimation.js`, importé par le serveur et par React (`src/blocs.js`). Le fichier est rangé dans `server/` car le Dockerfile de production ne copie que ce dossier.
 
 ## 13. Questions ouvertes

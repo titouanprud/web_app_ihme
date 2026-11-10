@@ -1,60 +1,34 @@
-import { useEffect, useState } from 'react';
-import { api } from '../api.js';
+import { useState } from 'react';
 import { libelleSport, resumerTotaux } from '../blocs.js';
 import { libelleType } from '../libelles.js';
+import { useCatalogue } from '../useCatalogue.js';
 import BlocsAffichage from '../components/BlocsAffichage.jsx';
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
 import Modal from '../components/Modal.jsx';
 import SeanceForm from '../components/SeanceForm.jsx';
 
-// Bibliothèque du coach : séances types réutilisables (sans date).
-// Pour les utiliser : « + Nouvelle séance » dans le calendrier d'un athlète → « Partir d'un modèle ».
+// Catalogue du coach : séances types réutilisables (sans date).
+// Pour les utiliser : les glisser depuis le panneau à gauche du calendrier d'un athlète,
+// ou « + Nouvelle séance » → « Partir d'un modèle ».
 export default function BibliothequePage() {
-  const [modeles, setModeles] = useState(null);
-  const [erreur, setErreur] = useState('');
+  const { modeles, erreur, creer, modifier, supprimer } = useCatalogue();
   // Fenêtre : null, { mode: 'creer' } ou { mode: 'modifier', modele }
   const [fenetre, setFenetre] = useState(null);
   const [ouvert, setOuvert] = useState(null); // id du modèle dont on affiche le détail
 
-  useEffect(() => {
-    api('seances-types')
-      .then(setModeles)
-      .catch((err) => setErreur(err.message));
-  }, []);
-
-  async function creer(valeurs) {
-    const modele = await api('seances-types', { method: 'POST', body: valeurs });
-    setModeles((liste) => [...liste, modele]);
+  async function enregistrer(valeurs) {
+    if (fenetre.mode === 'creer') await creer(valeurs);
+    else await modifier(fenetre.modele.id, valeurs);
     setFenetre(null);
-  }
-
-  async function modifier(valeurs) {
-    const modele = await api(`seances-types/${fenetre.modele.id}`, {
-      method: 'PUT',
-      body: valeurs,
-    });
-    setModeles((liste) => liste.map((m) => (m.id === modele.id ? modele : m)));
-    setFenetre(null);
-  }
-
-  async function supprimer(modele) {
-    if (!window.confirm(`Supprimer le modèle « ${modele.titre} » ?`)) return;
-    try {
-      await api(`seances-types/${modele.id}`, { method: 'DELETE' });
-      setModeles((liste) => liste.filter((m) => m.id !== modele.id));
-    } catch (err) {
-      setErreur(err.message);
-    }
   }
 
   return (
     <div className="page">
       <div className="page-entete">
         <div>
-          <h1>Ma bibliothèque</h1>
+          <h1>Mon catalogue</h1>
           <p className="texte-discret">
-            Vos séances types, à réutiliser depuis « + Nouvelle séance » dans le calendrier d’un
-            athlète.
+            Vos séances types, à glisser sur le calendrier d’un athlète (ou sur le vôtre).
           </p>
         </div>
         <button
@@ -71,7 +45,7 @@ export default function BibliothequePage() {
       {modeles?.length === 0 && (
         <p className="vide">
           Aucun modèle pour l’instant. Créez-en un ici, ou ouvrez une séance existante et cliquez
-          sur « Enregistrer comme modèle ».
+          sur « Ajouter au catalogue ».
         </p>
       )}
       <ul className="liste-modeles">
@@ -103,7 +77,7 @@ export default function BibliothequePage() {
                   className="btn btn-danger btn-petit"
                   onClick={() => supprimer(m)}
                 >
-                  Supprimer
+                  Retirer
                 </button>
               </span>
             </div>
@@ -125,7 +99,7 @@ export default function BibliothequePage() {
         >
           <SeanceForm
             initial={fenetre.modele ?? {}}
-            onSubmit={fenetre.mode === 'creer' ? creer : modifier}
+            onSubmit={enregistrer}
             onCancel={() => setFenetre(null)}
             avecDate={false}
           />

@@ -82,6 +82,10 @@ ALTER TABLE seances_types ADD COLUMN IF NOT EXISTS dplus_prevu_m INTEGER
 ALTER TABLE seances ADD COLUMN IF NOT EXISTS duree_estimee_sec INTEGER;
 ALTER TABLE seances ADD COLUMN IF NOT EXISTS distance_estimee_m INTEGER;
 
+-- true quand le coach a reçu le catalogue de départ (voir server/catalogueDepart.js) :
+-- les modèles qu'il supprime ensuite ne sont pas recréés.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS catalogue_initialise BOOLEAN NOT NULL DEFAULT false;
+
 -- Records personnels de l'athlète (saisis par lui) : un temps par distance
 CREATE TABLE IF NOT EXISTS records (
   athlete_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

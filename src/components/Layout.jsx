@@ -28,7 +28,7 @@ export default function Layout() {
                     />
                   </NavLink>
                   <NavLink to="/coach/mon-entrainement">Mon entraînement</NavLink>
-                  <NavLink to="/bibliotheque">Bibliothèque</NavLink>
+                  <NavLink to="/bibliotheque">Catalogue</NavLink>
                 </>
               ) : (
                 <>

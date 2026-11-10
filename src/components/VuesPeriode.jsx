@@ -7,6 +7,7 @@ import {
 } from '../calendrier.js';
 import { ajouterJours, formaterDate, toISODate } from '../dates.js';
 import { dureeSeanceMin, formaterDuree, STATUTS } from '../libelles.js';
+import { ZoneJour } from './GlisserDeposer.jsx';
 import Totaux from './Totaux.jsx';
 import { BoutonAjouter, CarteSeance } from './WeekCalendar.jsx';
 
@@ -32,8 +33,9 @@ export function VueMois({ periode, seances, totauxSemaines, totalMois, onOuvrir,
         {lundis.map((lundi) => (
           <div key={lundi} className="rangee">
             {joursDeLaSemaine(lundi).map((jour) => (
-              <div
+              <ZoneJour
                 key={jour}
+                jour={jour}
                 className={`case-jour${jour < periode.debut || jour > periode.fin ? ' hors-periode' : ''}${jour === aujourdhui ? ' jour-aujourdhui' : ''}`}
               >
                 <div className="case-jour-entete">
@@ -45,7 +47,7 @@ export function VueMois({ periode, seances, totauxSemaines, totalMois, onOuvrir,
                   .map((s) => (
                     <CarteSeance key={s.id} seance={s} onOuvrir={onOuvrir} mini />
                   ))}
-              </div>
+              </ZoneJour>
             ))}
             <div className="case-totaux">
               <Totaux t={totauxSemaines[lundi]} />
@@ -113,8 +115,9 @@ export function VueCompacte({ periode, libelle, seances, totauxSemaines, totauxM
                     {formaterDate(lundi, { day: 'numeric', month: 'short' })}
                   </span>
                   {joursDeLaSemaine(lundi).map((jour) => (
-                    <div
+                    <ZoneJour
                       key={jour}
+                      jour={jour}
                       className={`case-mini${jour === aujourdhui ? ' jour-aujourdhui' : ''}`}
                       title={formaterDate(jour)}
                     >
@@ -123,7 +126,7 @@ export function VueCompacte({ periode, libelle, seances, totauxSemaines, totauxM
                         .map((s) => (
                           <Pastille key={s.id} seance={s} onOuvrir={onOuvrir} />
                         ))}
-                    </div>
+                    </ZoneJour>
                   ))}
                   <div className="case-totaux">
                     <Totaux t={totauxSemaines[lundi]} compact />
