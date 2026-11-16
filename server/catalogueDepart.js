@@ -14,6 +14,8 @@ const bloc = (type, mesure, valeur, cible = { type: 'aucune' }, extra = {}) => (
 });
 const zone = (min, max = null) => ({ type: 'zone', min, max });
 const ref = (r) => ({ type: 'reference', ref: r });
+// Exercice de renforcement : nom, séries, puis répétitions ou durée, repos, charge, note
+const exercice = (nom, series, extra) => ({ type: 'exercice', nom, series, ...extra });
 
 export const MODELES_DE_DEPART = [
   {
@@ -129,16 +131,36 @@ export const MODELES_DE_DEPART = [
     sport: 'renfo',
     type: 'renfo',
     dureePrevueMin: 30,
-    description: 'Planche, planche latérale, pont fessier, superman : 3 tours.',
-    blocs: [],
+    description: 'Gainage en circuit : enchaîner les exercices, 3 tours.',
+    blocs: [
+      {
+        type: 'repetition',
+        repetitions: 3,
+        blocs: [
+          exercice('Planche', 1, { duree_sec: 45, repos_sec: 15 }),
+          exercice('Planche latérale', 2, {
+            duree_sec: 30,
+            repos_sec: 15,
+            note: 'Un côté par série',
+          }),
+          exercice('Pont fessier', 1, { repetitions: 15, repos_sec: 15 }),
+          exercice('Superman', 1, { repetitions: 12, repos_sec: 60 }),
+        ],
+      },
+    ],
   },
   {
     titre: 'Circuit jambes',
     sport: 'renfo',
     type: 'renfo',
     dureePrevueMin: 45,
-    description: 'Squats, fentes, montées sur banc, mollets : 4 tours, 1 min de récupération.',
-    blocs: [],
+    description: 'Renforcement des jambes pour la course et le ski-alpinisme.',
+    blocs: [
+      exercice('Squat', 4, { repetitions: 10, repos_sec: 90, charge_kg: 40 }),
+      exercice('Fentes avant', 3, { repetitions: 10, repos_sec: 60, note: 'Par jambe' }),
+      exercice('Montées sur banc', 3, { repetitions: 12, repos_sec: 60, charge_kg: 10 }),
+      exercice('Mollets debout', 3, { repetitions: 20, repos_sec: 45 }),
+    ],
   },
 ];
 

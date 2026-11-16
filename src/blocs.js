@@ -1,9 +1,18 @@
-import { allureDeReference, estimerBlocs } from '../server/partage/estimation.js';
+import {
+  allureDeReference,
+  allureDeZone,
+  allureIndicative,
+  estimerBlocs,
+} from '../server/partage/estimation.js';
 
 export {
   allureDeReference,
+  allureDeZone,
+  allureIndicative,
   estimerBloc,
   resoudreReferences,
+  vitesseCritique,
+  zonesDepuisSeuils,
 } from '../server/partage/estimation.js';
 
 // Outils pour les blocs de séance (même structure que server/blocs.js) :
@@ -29,13 +38,17 @@ export const TYPES_BLOC = {
   recuperation: 'Récupération',
   retour_calme: 'Retour au calme',
   repetition: 'Répétition',
+  exercice: 'Exercice',
 };
+
+// En renforcement, la séance se construit avec des exercices (et des circuits = répétitions)
+export const SPORT_EXERCICES = 'renfo';
 
 export const CIBLES_PAR_SPORT = {
   course: ['allure', 'reference', 'zone', 'aucune'],
   velo: ['puissance', 'zone', 'aucune'],
   ski_alpi: ['zone', 'aucune'],
-  renfo: ['zone', 'aucune'],
+  renfo: [],
   autre: ['zone', 'aucune'],
 };
 
@@ -58,6 +71,7 @@ export const REFERENCES = [
   { value: '42k', label: '@42k' },
   { value: 'sv1', label: '@SV1' },
   { value: 'sv2', label: '@SV2' },
+  { value: 'vc', label: '@VC' },
 ];
 
 export function libelleReference(ref) {
@@ -77,14 +91,38 @@ const CIBLE_PAR_DEFAUT = {
   aucune: { type: 'aucune' },
 };
 
-export function cibleParDefaut(type, profil = null) {
+// Cible en zone. En course à pied (hors modèle), elle garde l'allure de la zone tirée du profil.
+export function cibleZone(min, max, { sport, profil, modele = false } = {}) {
+  if (sport !== 'course' || modele) return { type: 'zone', min, max };
+  return { type: 'zone', min, max, allure_sec: allureDeZone(min, max, profil) };
+}
+
+export function cibleParDefaut(type, profil = null, { sport, modele } = {}) {
   if (type === 'reference') return cibleReference('10k', profil);
+  if (type === 'zone') return cibleZone(2, null, { sport, profil, modele });
   return { ...CIBLE_PAR_DEFAUT[type] };
+}
+
+// Exercice de renforcement pré-rempli (3 × 10, 1:30 de repos)
+export function nouvelExercice(nom = '') {
+  return {
+    type: 'exercice',
+    nom,
+    series: 3,
+    repetitions: 10,
+    repos_sec: 90,
+    charge_kg: null,
+    note: '',
+  };
 }
 
 // Nouveau bloc pré-rempli selon son type et le sport
 export function nouveauBloc(type, sport) {
+  if (type === 'exercice') return nouvelExercice();
   if (type === 'repetition') {
+    if (sport === SPORT_EXERCICES) {
+      return { type, repetitions: 3, blocs: [nouvelExercice(), nouvelExercice()] };
+    }
     return {
       type,
       repetitions: 4,
@@ -106,15 +144,35 @@ export function nouveauBloc(type, sport) {
 }
 
 // Quand le sport change, les cibles impossibles pour le nouveau sport sont retirées,
-// ainsi que le D+ si le nouveau sport n'en a pas.
+// ainsi que le D+ si le nouveau sport n'en a pas. Le renforcement n'a que des exercices :
+// passer en renfo retire les autres blocs, quitter le renfo retire les exercices
+// (une répétition vidée disparaît).
 export function adapterAuSport(blocs, sport) {
+  const exercices = sport === SPORT_EXERCICES;
+  const garder = (bloc) => bloc.type === 'repetition' || (bloc.type === 'exercice') === exercices;
   const adapter = (bloc) => {
-    if (bloc.type === 'repetition') return { ...bloc, blocs: bloc.blocs.map(adapter) };
+    if (bloc.type === 'repetition') {
+      return { ...bloc, blocs: bloc.blocs.filter(garder).map(adapter) };
+    }
+    if (bloc.type === 'exercice') return bloc;
     const permise = CIBLES_PAR_SPORT[sport].includes(bloc.cible?.type ?? 'aucune');
-    const { dplus, ...reste } = permise ? bloc : { ...bloc, cible: cibleParDefaut('aucune') };
+    let propre = permise ? bloc : { ...bloc, cible: cibleParDefaut('aucune') };
+    // L'allure d'une zone n'existe qu'en course à pied
+    if (propre.cible?.type === 'zone' && sport !== 'course') {
+      propre = { ...propre, cible: cibleZone(propre.cible.min, propre.cible.max) };
+    }
+    const { dplus, ...reste } = propre;
     return SPORTS_AVEC_DPLUS.includes(sport) && dplus !== undefined ? { ...reste, dplus } : reste;
   };
-  return blocs.map(adapter);
+  return blocs
+    .filter(garder)
+    .map(adapter)
+    .filter((bloc) => bloc.type !== 'repetition' || bloc.blocs.length > 0);
+}
+
+// Nombre de blocs simples (répétitions comprises) qu'adapterAuSport retirerait
+export function compterBlocs(blocs) {
+  return blocs.reduce((n, b) => n + (b.type === 'repetition' ? compterBlocs(b.blocs) : 1), 0);
 }
 
 // ----- Formatage et lecture des valeurs -----
@@ -182,21 +240,52 @@ export function formaterCible(cible) {
   const fourchette = (f) => (cible.max ? `${f(cible.min)} – ${f(cible.max)}` : f(cible.min));
   if (cible.type === 'allure') return `${fourchette(formaterChrono)} /km`;
   if (cible.type === 'puissance') return `${fourchette(String)} W`;
-  return cible.max ? `Z${cible.min} – Z${cible.max}` : `Z${cible.min}`;
+  const zone = cible.max ? `Z${cible.min} – Z${cible.max}` : `Z${cible.min}`;
+  return cible.allure_sec ? `${zone} (${formaterChrono(cible.allure_sec)} /km)` : zone;
+}
+
+// 40 → "40 kg" ; 12.5 → "12,5 kg"
+export function formaterCharge(kg) {
+  return `${String(kg).replace('.', ',')} kg`;
+}
+
+// Exercice : "4 × 10 · 40 kg · repos 1:30", ou "3 × 0:45 · repos 0:15"
+export function formaterExercice(bloc) {
+  const effort = bloc.duree_sec ? formaterChrono(bloc.duree_sec) : bloc.repetitions;
+  const morceaux = [`${bloc.series} × ${effort}`];
+  if (bloc.charge_kg) morceaux.push(formaterCharge(bloc.charge_kg));
+  if (bloc.repos_sec) morceaux.push(`repos ${formaterChrono(bloc.repos_sec)}`);
+  return morceaux.join(' · ');
 }
 
 // ----- Totaux -----
 
-// Durée (s), distance (m) et D+ (m) totaux : voir server/partage/estimation.js
-export const totaux = estimerBlocs;
+// Durée (s), distance (m) et D+ (m) totaux : voir server/partage/estimation.js.
+// Avec { sport, profil }, les blocs sans allure reçoivent l'allure indicative du sport
+// (même règle que le serveur pour les totaux du calendrier).
+export function totaux(blocs, { sport, profil = null } = {}) {
+  return estimerBlocs(blocs, { allureDefaut: sport ? allureIndicative(sport, profil) : null });
+}
 
-// Texte du récapitulatif, ex. "58 min · 11,2 km · D+ 300 m"
-export function resumerTotaux(blocs) {
-  const t = totaux(blocs);
+// Préfixe d'un total : rien s'il est exact, « ≈ » s'il est indicatif,
+// « ≥ » s'il manque une valeur (c'est alors un minimum)
+export function prefixeTotal(complet, manque) {
+  if (manque) return '≥ ';
+  return complet ? '' : '≈ ';
+}
+
+// Texte du récapitulatif, ex. "58 min · ≈ 11,2 km · D+ 300 m"
+export function resumerTotaux(blocs, options = {}) {
+  const t = totaux(blocs, options);
   const morceaux = [];
-  if (t.duree > 0) morceaux.push(`${t.dureeComplete ? '' : '≥ '}${Math.round(t.duree / 60)} min`);
-  if (t.distance > 0)
-    morceaux.push(`${t.distanceComplete ? '' : '≥ '}${formaterDistance(t.distance)}`);
+  if (t.duree > 0) {
+    morceaux.push(`${prefixeTotal(t.dureeComplete, t.dureeManque)}${Math.round(t.duree / 60)} min`);
+  }
+  if (t.distance > 0) {
+    morceaux.push(
+      `${prefixeTotal(t.distanceComplete, t.distanceManque)}${formaterDistance(t.distance)}`,
+    );
+  }
   if (t.dplus > 0) morceaux.push(formaterDplus(t.dplus));
   return morceaux.join(' · ');
 }

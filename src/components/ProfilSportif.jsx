@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { formaterChrono, lireChrono } from '../blocs.js';
-import { formaterDate } from '../dates.js';
+import { formaterChrono, lireChrono, vitesseCritique, zonesDepuisSeuils } from '../blocs.js';
 import ChampTexteValide from './ChampTexteValide.jsx';
 import { ErrorMessage, Loading } from './Feedback.jsx';
 
-// Profil sportif : records (saisis par l'athlète) et seuils SV1 / SV2 (estimés par le coach).
+// Profil sportif : records (saisis par l'athlète ou son coach), vitesse critique (calculée),
+// seuils SV1 / SV2 et zones 1 à 5 (estimés par le coach).
 
 export const DISTANCES = [
+  { value: '1200m', label: '1 200 m', metres: 1200 },
+  { value: '3600m', label: '3 600 m', metres: 3600 },
   { value: '5k', label: '5 km', metres: 5000 },
   { value: '10k', label: '10 km', metres: 10000 },
   { value: 'semi', label: 'Semi-marathon', metres: 21097 },
@@ -34,47 +36,9 @@ export function useProfil(athleteId) {
   return { profil, setProfil, erreur };
 }
 
-// Tableau des records avec l'allure moyenne de chacun
-export function RecordsLecture({ records }) {
-  if (records.length === 0) {
-    return <p className="texte-discret">Aucun record renseigné pour l’instant.</p>;
-  }
-  return (
-    <table className="tableau">
-      <thead>
-        <tr>
-          <th>Distance</th>
-          <th>Temps</th>
-          <th>Allure moyenne</th>
-          <th>Date</th>
-        </tr>
-      </thead>
-      <tbody>
-        {DISTANCES.map((d) => {
-          const r = records.find((x) => x.distance === d.value);
-          if (!r) return null;
-          return (
-            <tr key={d.value}>
-              <td>{d.label}</td>
-              <td>
-                <strong>{formaterChrono(r.tempsSec)}</strong>
-              </td>
-              <td>{formaterChrono(allureMoyenne(r.tempsSec, d.metres))} /km</td>
-              <td>
-                {r.date
-                  ? formaterDate(r.date, { day: 'numeric', month: 'short', year: 'numeric' })
-                  : '—'}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
-// Formulaire de l'athlète pour ses records
-export function RecordsForm({ records, onEnregistre }) {
+// Formulaire des records : l'athlète pour lui-même, ou le coach pour un de ses athlètes
+// (athleteId) ou pour lui-même (sans athleteId)
+export function RecordsForm({ records, onEnregistre, athleteId = null }) {
   // Une ligne par distance : { tempsSec, date }
   const [valeurs, setValeurs] = useState(() =>
     Object.fromEntries(
@@ -103,7 +67,8 @@ export function RecordsForm({ records, onEnregistre }) {
       date: valeurs[d.value].date || null,
     }));
     try {
-      const profil = await api('profil/records', { method: 'PUT', body: { records: liste } });
+      const chemin = athleteId ? `profil/records?athleteId=${athleteId}` : 'profil/records';
+      const profil = await api(chemin, { method: 'PUT', body: { records: liste } });
       onEnregistre(profil);
       setSucces('Records enregistrés.');
     } catch (err) {
@@ -134,7 +99,7 @@ export function RecordsForm({ records, onEnregistre }) {
                 formater={formaterChrono}
                 lire={lireTemps}
                 optionnel
-                placeholder={d.value === '5k' || d.value === '10k' ? 'mm:ss' : 'h:mm:ss'}
+                placeholder={d.metres <= 10000 ? 'mm:ss' : 'h:mm:ss'}
               />
             </label>
             <label>
@@ -153,7 +118,226 @@ export function RecordsForm({ records, onEnregistre }) {
       })}
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={envoi}>
-          {envoi ? 'Enregistrement…' : 'Enregistrer mes records'}
+          {envoi ? 'Enregistrement…' : 'Enregistrer les records'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// Vitesse critique (VC), calculée à partir des records sur 1200 m et 3600 m
+export function VitesseCritique({ records }) {
+  const vc = vitesseCritique(records);
+  const ont = (d) => records.some((r) => r.distance === d);
+  if (!vc) {
+    return (
+      <p className="texte-discret">
+        {ont('1200m') && ont('3600m')
+          ? 'Records 1200 m et 3600 m incohérents : le 3600 m doit être couru moins vite.'
+          : 'Renseignez les records sur 1200 m et 3600 m pour calculer la vitesse critique.'}
+      </p>
+    );
+  }
+  return (
+    <div className="seuils">
+      <div className="seuil">
+        <span className="seuil-nom">VC</span>
+        <strong>{formaterChrono(vc.allureSec)} /km</strong>
+        <span className="texte-discret">{String(vc.kmh).replace('.', ',')} km/h</span>
+      </div>
+      <span className="texte-discret">
+        D′ ≈ {vc.dPrimeM} m · calculée avec les records 1200 m et 3600 m. Utilisable dans les
+        séances avec @VC.
+      </span>
+    </div>
+  );
+}
+
+// ----- Zones 1 à 5 -----
+
+const ZONES = [1, 2, 3, 4, 5];
+
+// Fourchette de FC lisible : "140 – 150", "≥ 175", "≤ 140"
+function fourchetteFc(min, max) {
+  if (min && max) return `${min} – ${max}`;
+  if (min) return `≥ ${min}`;
+  if (max) return `≤ ${max}`;
+  return '—';
+}
+
+export function ZonesLecture({ zones }) {
+  if (!zones?.length) {
+    return <p className="texte-discret">Zones pas encore définies.</p>;
+  }
+  return (
+    <table className="tableau tableau-zones">
+      <thead>
+        <tr>
+          <th>Zone</th>
+          <th>Allure (/km)</th>
+          <th>FC (bpm)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {ZONES.map((n) => {
+          const z = zones.find((x) => x.zone === n) ?? {};
+          // Allure : la borne "max" (en secondes) est la plus lente ; Z1 = plus lent que…
+          const allure =
+            z.allureMin && z.allureMax
+              ? `${formaterChrono(z.allureMin)} – ${formaterChrono(z.allureMax)}`
+              : z.allureMin
+                ? `plus lent que ${formaterChrono(z.allureMin)}`
+                : z.allureMax
+                  ? `plus vite que ${formaterChrono(z.allureMax)}`
+                  : '—';
+          return (
+            <tr key={n} className={`zone-${n}`}>
+              <td>
+                <strong>Z{n}</strong>
+              </td>
+              <td>{allure}</td>
+              <td>{fourchetteFc(z.fcMin, z.fcMax)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// Formulaire du coach : allure et FC de chaque zone, avec une proposition calculée
+// depuis SV1 / SV2 (modifiable ensuite)
+export function ZonesForm({ athleteId, zones, seuils, onEnregistre }) {
+  const depuis = (liste) =>
+    ZONES.map((n) => {
+      const z = liste?.find((x) => x.zone === n) ?? {};
+      return {
+        zone: n,
+        allureMin: z.allureMin ?? null,
+        allureMax: z.allureMax ?? null,
+        fcMin: z.fcMin ?? '',
+        fcMax: z.fcMax ?? '',
+      };
+    });
+  const [valeurs, setValeurs] = useState(() => depuis(zones));
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const [succes, setSucces] = useState('');
+
+  const changer = (n, modif) =>
+    setValeurs(valeurs.map((z) => (z.zone === n ? { ...z, ...modif } : z)));
+  const nombre = (v) => (v === '' || v === null ? null : Number(v));
+  const avecSeuils = seuils && (seuils.sv1Allure || seuils.sv2Allure || seuils.sv1Fc);
+
+  async function envoyer(e) {
+    e.preventDefault();
+    setEnvoi(true);
+    setErreur('');
+    setSucces('');
+    try {
+      const profil = await api(`profil/zones/${athleteId}`, {
+        method: 'PUT',
+        body: {
+          zones: valeurs.map((z) => ({ ...z, fcMin: nombre(z.fcMin), fcMax: nombre(z.fcMax) })),
+        },
+      });
+      onEnregistre(profil);
+      setSucces('Zones enregistrées : elles servent aux allures des cibles en zone.');
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  return (
+    <form className="form" onSubmit={envoyer}>
+      <ErrorMessage message={erreur} />
+      {succes && (
+        <p className="success" role="status">
+          {succes}
+        </p>
+      )}
+      {avecSeuils && (
+        <button
+          type="button"
+          className="btn btn-ghost btn-petit"
+          onClick={() => setValeurs(depuis(zonesDepuisSeuils(seuils)))}
+        >
+          Proposer à partir de SV1 / SV2
+        </button>
+      )}
+      <div className="defilement-x">
+        <table className="tableau tableau-zones">
+          <thead>
+            <tr>
+              <th>Zone</th>
+              <th>Allure de</th>
+              <th>à</th>
+              <th>FC de</th>
+              <th>à</th>
+            </tr>
+          </thead>
+          <tbody>
+            {valeurs.map((z) => (
+              <tr key={z.zone} className={`zone-${z.zone}`}>
+                <td>
+                  <strong>Z{z.zone}</strong>
+                </td>
+                <td>
+                  <ChampTexteValide
+                    value={z.allureMin}
+                    onChange={(allureMin) => changer(z.zone, { allureMin })}
+                    formater={formaterChrono}
+                    lire={lireTemps}
+                    optionnel
+                    placeholder="rapide"
+                    aria-label={`Z${z.zone} : allure la plus rapide`}
+                  />
+                </td>
+                <td>
+                  <ChampTexteValide
+                    value={z.allureMax}
+                    onChange={(allureMax) => changer(z.zone, { allureMax })}
+                    formater={formaterChrono}
+                    lire={lireTemps}
+                    optionnel
+                    placeholder="lente"
+                    aria-label={`Z${z.zone} : allure la plus lente`}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min={40}
+                    max={230}
+                    value={z.fcMin}
+                    onChange={(e) => changer(z.zone, { fcMin: e.target.value })}
+                    aria-label={`Z${z.zone} : FC basse`}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min={40}
+                    max={230}
+                    value={z.fcMax}
+                    onChange={(e) => changer(z.zone, { fcMax: e.target.value })}
+                    aria-label={`Z${z.zone} : FC haute`}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="texte-discret">
+        Allures en min/km, de la plus rapide à la plus lente. Une zone sans allure garde une
+        distance indicative dans les séances.
+      </p>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary" disabled={envoi}>
+          {envoi ? 'Enregistrement…' : 'Enregistrer les zones'}
         </button>
       </div>
     </form>
@@ -265,13 +449,13 @@ export function SeuilsForm({ athleteId, seuils, onEnregistre }) {
 
 // Bloc "Profil sportif" affiché sur la page d'un athlète côté coach.
 // Le profil est chargé par la page (useProfil), qui s'en sert aussi pour les allures de référence.
-// moi = true : profil du coach lui-même, qui saisit aussi ses records.
+// Le coach saisit les records de l'athlète (ou les siens : moi = true), ses seuils et ses zones.
 export function ProfilAthleteCoach({ athleteId, profil, setProfil, erreur, moi = false }) {
   return (
     <details className="carte profil-coach">
       <summary>
         <strong>Profil sportif</strong>
-        <span className="texte-discret"> · records et seuils SV1 / SV2</span>
+        <span className="texte-discret"> · records, vitesse critique, seuils et zones</span>
       </summary>
       <ErrorMessage message={erreur} />
       {!profil && !erreur && <Loading />}
@@ -279,15 +463,26 @@ export function ProfilAthleteCoach({ athleteId, profil, setProfil, erreur, moi =
         <div className="profil-coach-contenu">
           <section>
             <h3>{moi ? 'Mes records' : 'Records de l’athlète'}</h3>
-            {moi ? (
-              <RecordsForm records={profil.records} onEnregistre={setProfil} />
-            ) : (
-              <RecordsLecture records={profil.records} />
-            )}
+            <RecordsForm
+              records={profil.records}
+              onEnregistre={setProfil}
+              athleteId={moi ? null : athleteId}
+            />
           </section>
           <section>
+            <h3>Vitesse critique</h3>
+            <VitesseCritique records={profil.records} />
             <h3>{moi ? 'Mes seuils' : 'Mon estimation des seuils'}</h3>
             <SeuilsForm athleteId={athleteId} seuils={profil.seuils} onEnregistre={setProfil} />
+          </section>
+          <section className="profil-zones">
+            <h3>Zones 1 à 5</h3>
+            <ZonesForm
+              athleteId={athleteId}
+              zones={profil.zones}
+              seuils={profil.seuils}
+              onEnregistre={setProfil}
+            />
           </section>
         </div>
       )}

@@ -6,13 +6,17 @@ import { requireAuth, requireRole } from '../middlewares/auth.js';
 import * as valider from '../validation.js';
 
 // Profil sportif d'un athlète :
-// - records sur 5 km, 10 km, semi et marathon : saisis par l'athlète, visibles par son coach ;
-// - seuils SV1 / SV2 : estimés par le coach, visibles (sans modification) par l'athlète.
+// - records sur 1200 m, 3600 m, 5 km, 10 km, semi et marathon : saisis par l'athlète
+//   ou par son coach ; la vitesse critique est calculée à partir des records 1200 m / 3600 m ;
+// - seuils SV1 / SV2 et zones 1 à 5 (allure, FC) : estimés par le coach, visibles
+//   (sans modification) par l'athlète.
 // Un coach a aussi son propre profil (son entraînement) : il saisit ses records et ses seuils.
 const router = Router();
 
 // Temps acceptés pour chaque distance, en secondes (bornes larges pour éviter les fautes de frappe)
 const DISTANCES = {
+  '1200m': { min: 150, max: 1200, libelle: 'Le temps sur 1200 m' },
+  '3600m': { min: 480, max: 3600, libelle: 'Le temps sur 3600 m' },
   '5k': { min: 600, max: 3 * 3600, libelle: 'Le temps sur 5 km' },
   '10k': { min: 1200, max: 5 * 3600, libelle: 'Le temps sur 10 km' },
   semi: { min: 2700, max: 8 * 3600, libelle: 'Le temps sur semi-marathon' },
@@ -20,19 +24,34 @@ const DISTANCES = {
 };
 
 // Exporté : la route des séances l'utilise pour calculer les allures de référence (@10k…)
-export async function lireProfil(athleteId) {
-  const records = await pool.query(
+export async function lireProfil(athleteId, db = pool) {
+  const records = await db.query(
     `SELECT distance, temps_sec AS "tempsSec", date_record AS "date"
      FROM records WHERE athlete_id = $1`,
     [athleteId],
   );
-  const seuils = await pool.query(
+  const seuils = await db.query(
     `SELECT sv1_allure_sec AS "sv1Allure", sv1_fc AS "sv1Fc",
             sv2_allure_sec AS "sv2Allure", sv2_fc AS "sv2Fc", date_maj AS "dateMaj"
      FROM seuils WHERE athlete_id = $1`,
     [athleteId],
   );
-  return { records: records.rows, seuils: seuils.rows[0] ?? null };
+  const zones = await db.query(
+    `SELECT zone, allure_min_sec AS "allureMin", allure_max_sec AS "allureMax",
+            fc_min AS "fcMin", fc_max AS "fcMax"
+     FROM zones WHERE athlete_id = $1 ORDER BY zone`,
+    [athleteId],
+  );
+  return { records: records.rows, seuils: seuils.rows[0] ?? null, zones: zones.rows };
+}
+
+// Athlète dont on modifie le profil : soi-même, ou pour un coach l'athlète indiqué
+// (?athleteId=, un de ses athlètes ou lui-même)
+async function athleteCible(req, athleteIdRecu) {
+  if (req.user.role !== 'coach' || athleteIdRecu === undefined) return req.user.id;
+  const athleteId = valider.identifiant(athleteIdRecu, "L'athlète (athleteId)");
+  await verifierAccesAthlete(req.user.id, athleteId);
+  return athleteId;
 }
 
 // GET /api/profil?athleteId= : l'athlète lit son profil, le coach celui d'un de ses athlètes
@@ -46,13 +65,14 @@ router.get('/', requireAuth, async (req, res) => {
   res.json(await lireProfil(athleteId));
 });
 
-// PUT /api/profil/records : l'utilisateur connecté (athlète, ou coach pour lui-même)
-// enregistre ses propres records.
+// PUT /api/profil/records?athleteId= : l'utilisateur connecté enregistre ses propres records ;
+// un coach peut aussi enregistrer ceux d'un de ses athlètes (athleteId).
 // Corps : { records: [{ distance: '10k', tempsSec: 2700, date: '2026-04-12' | null }, …] }
 // La liste remplace les records précédents (une distance absente est effacée).
 router.put('/records', requireAuth, async (req, res) => {
   const liste = req.body?.records;
   if (!Array.isArray(liste)) throw new HttpError(400, 'Les records doivent être une liste.');
+  const athleteId = await athleteCible(req, req.query.athleteId);
 
   const vus = new Set();
   const records = liste.map((r) => {
@@ -71,11 +91,11 @@ router.put('/records', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('DELETE FROM records WHERE athlete_id = $1', [req.user.id]);
+    await client.query('DELETE FROM records WHERE athlete_id = $1', [athleteId]);
     for (const r of records) {
       await client.query(
         `INSERT INTO records (athlete_id, distance, temps_sec, date_record) VALUES ($1, $2, $3, $4)`,
-        [req.user.id, r.distance, r.tempsSec, r.date],
+        [athleteId, r.distance, r.tempsSec, r.date],
       );
     }
     await client.query('COMMIT');
@@ -85,7 +105,7 @@ router.put('/records', requireAuth, async (req, res) => {
   } finally {
     client.release();
   }
-  res.json(await lireProfil(req.user.id));
+  res.json(await lireProfil(athleteId));
 });
 
 // PUT /api/profil/seuils/:athleteId : le coach enregistre son estimation de SV1 et SV2.
@@ -120,6 +140,59 @@ router.put('/seuils/:athleteId', requireAuth, requireRole('coach'), async (req, 
          sv2_allure_sec = EXCLUDED.sv2_allure_sec, sv2_fc = EXCLUDED.sv2_fc, date_maj = now()`,
     [athleteId, s.sv1Allure, s.sv1Fc, s.sv2Allure, s.sv2Fc],
   );
+  res.json(await lireProfil(athleteId));
+});
+
+// PUT /api/profil/zones/:athleteId : le coach enregistre les zones 1 à 5 de l'athlète.
+// Corps : { zones: [{ zone: 1, allureMin, allureMax, fcMin, fcMax }, …] } ; chaque valeur
+// est facultative (allures en s/km : allureMin est la plus rapide). La liste remplace la précédente.
+router.put('/zones/:athleteId', requireAuth, requireRole('coach'), async (req, res) => {
+  const athleteId = valider.identifiant(req.params.athleteId, "L'athlète");
+  await verifierAccesAthlete(req.user.id, athleteId);
+  const liste = req.body?.zones;
+  if (!Array.isArray(liste)) throw new HttpError(400, 'Les zones doivent être une liste.');
+
+  const allure = { min: 120, max: 1200, optionnel: true };
+  const fc = { min: 40, max: 230, optionnel: true };
+  const vues = new Set();
+  const zones = liste.map((z) => {
+    const zone = valider.entier(z?.zone, 'Le numéro de zone', { min: 1, max: 5 });
+    if (vues.has(zone)) throw new HttpError(400, `La zone ${zone} est présente deux fois.`);
+    vues.add(zone);
+    const v = {
+      zone,
+      allureMin: valider.entier(z.allureMin, `Z${zone} : l’allure (2:00 à 20:00 /km)`, allure),
+      allureMax: valider.entier(z.allureMax, `Z${zone} : l’allure (2:00 à 20:00 /km)`, allure),
+      fcMin: valider.entier(z.fcMin, `Z${zone} : la FC`, fc),
+      fcMax: valider.entier(z.fcMax, `Z${zone} : la FC`, fc),
+    };
+    if (v.allureMin && v.allureMax && v.allureMin > v.allureMax) {
+      throw new HttpError(400, `Z${zone} : la première allure doit être la plus rapide.`);
+    }
+    if (v.fcMin && v.fcMax && v.fcMin > v.fcMax) {
+      throw new HttpError(400, `Z${zone} : la FC basse doit être inférieure à la FC haute.`);
+    }
+    return v;
+  });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM zones WHERE athlete_id = $1', [athleteId]);
+    for (const z of zones) {
+      await client.query(
+        `INSERT INTO zones (athlete_id, zone, allure_min_sec, allure_max_sec, fc_min, fc_max)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [athleteId, z.zone, z.allureMin, z.allureMax, z.fcMin, z.fcMax],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
   res.json(await lireProfil(athleteId));
 });
 

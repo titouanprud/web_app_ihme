@@ -1,38 +1,70 @@
+import { useState } from 'react';
+import { useAuth } from '../auth.jsx';
 import {
   CIBLES_PAR_SPORT,
   LIBELLES_CIBLE,
   REFERENCES,
+  SPORT_EXERCICES,
   SPORTS_AVEC_DPLUS,
   TYPES_BLOC,
   allureDeReference,
   cibleParDefaut,
   cibleReference,
+  cibleZone,
   formaterChrono,
   formaterDistance,
   lireChrono,
   lireDistance,
   nouveauBloc,
 } from '../blocs.js';
+import { CATEGORIES_EXERCICE, useExercices } from '../useExercices.js';
 import ChampTexteValide from './ChampTexteValide.jsx';
 
 // Éditeur de la structure d'une séance : liste de blocs que l'on peut ajouter,
 // modifier, déplacer (↑ ↓), dupliquer et supprimer.
+// En renforcement, les blocs sont des exercices (séries, répétitions, repos, charge),
+// regroupables en circuit (répétition).
 // - profil : profil de l'athlète (records, seuils) pour les allures de référence (@10k…)
 // - modele : true pour un modèle du catalogue (la référence est gardée sans allure)
 // "options" regroupe ces deux valeurs, transmises telles quelles à chaque bloc.
 export default function BlocsEditor({ blocs, sport, onChange, profil = null, modele = false }) {
   return (
-    <ListeBlocs
-      blocs={blocs}
-      sport={sport}
-      onChange={onChange}
-      imbrique={false}
-      options={{ profil, modele }}
-    />
+    <>
+      <ListeBlocs
+        blocs={blocs}
+        sport={sport}
+        onChange={onChange}
+        imbrique={false}
+        options={{ profil, modele }}
+      />
+      {sport === SPORT_EXERCICES && <SuggestionsExercices />}
+    </>
+  );
+}
+
+// Liste de suggestions (une seule par éditeur) utilisée par le champ "Exercice" de chaque bloc
+const ID_SUGGESTIONS = 'exercices-base';
+function SuggestionsExercices() {
+  const { exercices } = useExercices();
+  return (
+    <datalist id={ID_SUGGESTIONS}>
+      {CATEGORIES_EXERCICE.flatMap((c) =>
+        (exercices ?? [])
+          .filter((e) => e.categorie === c.value)
+          .map((e) => (
+            <option key={e.id} value={e.nom}>
+              {c.label}
+            </option>
+          )),
+      )}
+    </datalist>
   );
 }
 
 const TYPES_AJOUTABLES = ['echauffement', 'intervalle', 'recuperation', 'retour_calme'];
+
+// Une durée courte (repos, gainage) : "90" = 90 secondes, "1:30" = 1 min 30
+const lireSecondes = (texte) => (/^\d+$/.test(texte.trim()) ? Number(texte) : lireChrono(texte));
 
 // imbrique = true pour les blocs à l'intérieur d'une répétition (pas de répétition dedans)
 function ListeBlocs({ blocs, sport, onChange, imbrique, options }) {
@@ -47,7 +79,10 @@ function ListeBlocs({ blocs, sport, onChange, imbrique, options }) {
     onChange(copie);
   };
 
-  const types = imbrique ? TYPES_AJOUTABLES : [...TYPES_AJOUTABLES, 'repetition'];
+  const simples = sport === SPORT_EXERCICES ? ['exercice'] : TYPES_AJOUTABLES;
+  const types = imbrique ? simples : [...simples, 'repetition'];
+  const libelle = (type) =>
+    type === 'repetition' && sport === SPORT_EXERCICES ? 'Circuit' : TYPES_BLOC[type];
 
   return (
     <div className="blocs">
@@ -57,7 +92,7 @@ function ListeBlocs({ blocs, sport, onChange, imbrique, options }) {
             <li key={i} className={`bloc bloc-${bloc.type}`}>
               <div className="bloc-entete">
                 <strong>
-                  {i + 1}. {TYPES_BLOC[bloc.type]}
+                  {i + 1}. {libelle(bloc.type)}
                 </strong>
                 <span className="bloc-actions">
                   <button
@@ -96,14 +131,18 @@ function ListeBlocs({ blocs, sport, onChange, imbrique, options }) {
                   </button>
                 </span>
               </div>
-              {bloc.type === 'repetition' ? (
+              {bloc.type === 'repetition' && (
                 <ChampsRepetition
                   bloc={bloc}
                   sport={sport}
                   onChange={(b) => remplacer(i, b)}
                   options={options}
                 />
-              ) : (
+              )}
+              {bloc.type === 'exercice' && (
+                <ChampsExercice bloc={bloc} onChange={(b) => remplacer(i, b)} />
+              )}
+              {bloc.type !== 'repetition' && bloc.type !== 'exercice' && (
                 <ChampsBloc
                   bloc={bloc}
                   sport={sport}
@@ -123,7 +162,7 @@ function ListeBlocs({ blocs, sport, onChange, imbrique, options }) {
             className="btn btn-ghost btn-petit"
             onClick={() => onChange([...blocs, nouveauBloc(type, sport)])}
           >
-            + {TYPES_BLOC[type]}
+            + {libelle(type)}
           </button>
         ))}
       </div>
@@ -135,7 +174,7 @@ function ChampsRepetition({ bloc, sport, onChange, options }) {
   return (
     <div className="bloc-champs">
       <label className="champ-court">
-        Répéter
+        {sport === SPORT_EXERCICES ? 'Tours' : 'Répéter'}
         <input
           type="number"
           min={2}
@@ -158,8 +197,14 @@ function ChampsRepetition({ bloc, sport, onChange, options }) {
 
 function ChampsBloc({ bloc, sport, onChange, options }) {
   const changer = (modif) => onChange({ ...bloc, ...modif });
-  const changerCible = (modif) => changer({ cible: { ...bloc.cible, ...modif } });
   const cible = bloc.cible ?? cibleParDefaut('aucune');
+  // Une zone qui change reprend l'allure de la nouvelle zone (course à pied)
+  const changerCible = (modif) => {
+    const nouvelle = { ...cible, ...modif };
+    if (nouvelle.type !== 'zone') return changer({ cible: nouvelle });
+    if (nouvelle.max !== null && nouvelle.max <= nouvelle.min) nouvelle.max = null;
+    changer({ cible: cibleZone(nouvelle.min, nouvelle.max, { sport, ...options }) });
+  };
 
   return (
     <div className="bloc-champs">
@@ -199,7 +244,11 @@ function ChampsBloc({ bloc, sport, onChange, options }) {
         Cible
         <select
           value={cible.type}
-          onChange={(e) => changer({ cible: cibleParDefaut(e.target.value, options.profil) })}
+          onChange={(e) =>
+            changer({
+              cible: cibleParDefaut(e.target.value, options.profil, { sport, ...options }),
+            })
+          }
         >
           {CIBLES_PAR_SPORT[sport].map((type) => (
             <option key={type} value={type}>
@@ -213,6 +262,15 @@ function ChampsBloc({ bloc, sport, onChange, options }) {
       )}
       {!['aucune', 'reference'].includes(cible.type) && (
         <ChampsCible cible={cible} onChange={changerCible} />
+      )}
+      {cible.type === 'zone' && sport === 'course' && (
+        <span className="texte-discret aide-reference">
+          {options.modele && 'L’allure de la zone sera prise dans le profil de l’athlète.'}
+          {!options.modele &&
+            (cible.allure_sec
+              ? `≈ ${formaterChrono(cible.allure_sec)} /km (zones du profil)`
+              : 'Zone sans allure dans le profil : distance indicative.')}
+        </span>
       )}
       {SPORTS_AVEC_DPLUS.includes(sport) && (
         <label className="champ-court">
@@ -303,6 +361,158 @@ function ChampsReference({ cible, onChange, options }) {
         </>
       )}
     </>
+  );
+}
+
+// Exercice de renforcement : nom (choisi dans la base, ou nouveau), séries,
+// répétitions ou durée, repos entre les séries, charge, note.
+function ChampsExercice({ bloc, onChange }) {
+  const { user } = useAuth();
+  const { exercices, erreur, ajouter } = useExercices();
+  const [categorie, setCategorie] = useState('jambes');
+  const [ajout, setAjout] = useState({ envoi: false, message: '' });
+  const changer = (modif) => onChange({ ...bloc, ...modif });
+  const enDuree = bloc.duree_sec !== undefined && bloc.duree_sec !== null;
+
+  const nom = bloc.nom.trim();
+  const connu = (exercices ?? []).some((e) => e.nom.toLowerCase() === nom.toLowerCase());
+  // Seul le coach enrichit sa base (l'athlète choisit dans la liste ou écrit un nom)
+  const peutAjouter = user?.role === 'coach' && exercices && nom && !connu;
+
+  async function ajouterALaBase() {
+    setAjout({ envoi: true, message: '' });
+    try {
+      await ajouter(nom, categorie);
+      setAjout({ envoi: false, message: 'Ajouté à votre base.' });
+    } catch (err) {
+      setAjout({ envoi: false, message: err.message });
+    }
+  }
+
+  return (
+    <div className="bloc-champs">
+      <label className="champ-large">
+        Exercice
+        <input
+          list={ID_SUGGESTIONS}
+          value={bloc.nom}
+          onChange={(e) => changer({ nom: e.target.value })}
+          maxLength={100}
+          required
+          placeholder="ex. Squat (choisir ou écrire)"
+        />
+      </label>
+      {erreur && <span className="texte-discret">{erreur}</span>}
+      {peutAjouter && (
+        <span className="ajout-exercice">
+          <select
+            value={categorie}
+            onChange={(e) => setCategorie(e.target.value)}
+            aria-label="Catégorie du nouvel exercice"
+          >
+            {CATEGORIES_EXERCICE.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-ghost btn-petit"
+            onClick={ajouterALaBase}
+            disabled={ajout.envoi}
+          >
+            + Ajouter à ma base
+          </button>
+        </span>
+      )}
+      {ajout.message && <span className="texte-discret">{ajout.message}</span>}
+      <label className="champ-court">
+        Séries
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={bloc.series}
+          onChange={(e) => changer({ series: Number(e.target.value) })}
+        />
+      </label>
+      <label className="champ-court">
+        Effort
+        <select
+          value={enDuree ? 'duree' : 'repetitions'}
+          onChange={(e) => {
+            const reste = { ...bloc };
+            delete reste.repetitions;
+            delete reste.duree_sec;
+            onChange(
+              e.target.value === 'duree'
+                ? { ...reste, duree_sec: 30 }
+                : { ...reste, repetitions: 10 },
+            );
+          }}
+        >
+          <option value="repetitions">Répétitions</option>
+          <option value="duree">Durée</option>
+        </select>
+      </label>
+      {enDuree ? (
+        <label className="champ-court">
+          Durée
+          <ChampTexteValide
+            value={bloc.duree_sec}
+            onChange={(duree_sec) => changer({ duree_sec })}
+            formater={formaterChrono}
+            lire={lireSecondes}
+            placeholder="0:45"
+          />
+        </label>
+      ) : (
+        <label className="champ-court">
+          Répétitions
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={bloc.repetitions ?? ''}
+            onChange={(e) => changer({ repetitions: Number(e.target.value) })}
+          />
+        </label>
+      )}
+      <label className="champ-court">
+        Repos
+        <ChampTexteValide
+          value={bloc.repos_sec ?? 0}
+          onChange={(repos_sec) => changer({ repos_sec })}
+          formater={formaterChrono}
+          lire={lireSecondes}
+          placeholder="1:30"
+        />
+      </label>
+      <label className="champ-court">
+        Charge (kg)
+        <input
+          type="number"
+          min={0}
+          max={500}
+          step={0.5}
+          value={bloc.charge_kg ?? ''}
+          onChange={(e) =>
+            changer({ charge_kg: e.target.value === '' ? null : Number(e.target.value) })
+          }
+          placeholder="option"
+        />
+      </label>
+      <label className="champ-large">
+        Note
+        <input
+          value={bloc.note ?? ''}
+          onChange={(e) => changer({ note: e.target.value })}
+          maxLength={200}
+          placeholder="facultatif (ex. tempo lent, par jambe)"
+        />
+      </label>
+    </div>
   );
 }
 

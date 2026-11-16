@@ -61,7 +61,7 @@ export default function BibliothequePage() {
                 <strong>{m.titre}</strong>
                 <span className="texte-discret">
                   {libelleSport(m.sport)} · {libelleType(m.type)}
-                  {m.blocs.length > 0 && ` · ${resumerTotaux(m.blocs)}`}
+                  {m.blocs.length > 0 && ` · ${resumerTotaux(m.blocs, { sport: m.sport })}`}
                 </span>
               </button>
               <span className="page-actions">
@@ -83,7 +83,7 @@ export default function BibliothequePage() {
             </div>
             {ouvert === m.id && (
               <div className="modele-detail">
-                <BlocsAffichage blocs={m.blocs} />
+                <BlocsAffichage blocs={m.blocs} sport={m.sport} />
                 {m.description && <p className="details-description">{m.description}</p>}
               </div>
             )}

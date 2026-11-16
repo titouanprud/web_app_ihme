@@ -4,7 +4,7 @@ import { HttpError } from '../errors.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
 import { estimerBlocs } from '../partage/estimation.js';
 import * as valider from '../validation.js';
-import { completerAllures, lireSeance, modifierSeance, trouverSeance } from './seances.js';
+import { lireSeance, modifierSeance, preparerSeance, trouverSeance } from './seances.js';
 
 // Propositions de modification : l'athlète propose de changer la date ou le contenu d'une
 // séance prévue ; la séance ne change que si le coach accepte.
@@ -24,8 +24,10 @@ function contenuActuel(seance) {
 // (lireSeance), allures de référence complétées avec le profil de l'athlète.
 // Si la structure change, la durée prévue est recalculée à partir des nouveaux blocs.
 async function appliquerChangements(seance, changements) {
-  const s = lireSeance({ ...contenuActuel(seance), ...changements });
-  s.blocs = await completerAllures(s.blocs, seance.athleteId);
+  const s = await preparerSeance(
+    lireSeance({ ...contenuActuel(seance), ...changements }),
+    seance.athleteId,
+  );
   if (changements.blocs) {
     const t = estimerBlocs(s.blocs);
     if (t.dureeComplete && t.duree > 0) s.dureePrevueMin = Math.round(t.duree / 60);
@@ -99,10 +101,13 @@ router.post('/', requireAuth, requireRole('athlete'), async (req, res) => {
   }
 
   // On garde seulement les champs qui changent vraiment, dans leur forme vérifiée
+  // La séance actuelle passe par la même préparation (ex. allure des zones ajoutée aux blocs),
+  // pour ne pas voir de changement là où il n'y en a pas.
   const apres = await appliquerChangements(seance, recus);
+  const avant = await appliquerChangements(seance, {});
   const changements = {};
   for (const cle of Object.keys(recus)) {
-    if (!identiques(apres[cle], seance[cle])) changements[cle] = apres[cle];
+    if (!identiques(apres[cle], avant[cle])) changements[cle] = apres[cle];
   }
   if (Object.keys(changements).length === 0) {
     throw new HttpError(400, 'Aucun changement proposé.');

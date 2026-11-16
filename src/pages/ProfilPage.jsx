@@ -1,8 +1,15 @@
 import { ErrorMessage, Loading } from '../components/Feedback.jsx';
-import { RecordsForm, SeuilsLecture, useProfil } from '../components/ProfilSportif.jsx';
+import {
+  RecordsForm,
+  SeuilsLecture,
+  useProfil,
+  VitesseCritique,
+  ZonesLecture,
+} from '../components/ProfilSportif.jsx';
 
-// Profil sportif de l'athlète : il saisit ses records et consulte ses seuils
-// SV1 / SV2, estimés par son coach (non modifiables ici).
+// Profil sportif de l'athlète : il saisit ses records (son coach peut aussi les saisir),
+// voit sa vitesse critique et consulte ses seuils SV1 / SV2 et ses zones,
+// estimés par son coach (non modifiables ici).
 export default function ProfilPage() {
   const { profil, setProfil, erreur } = useProfil();
 
@@ -19,11 +26,20 @@ export default function ProfilPage() {
               Allures associées à vos seuils ventilatoires, estimées par votre coach.
             </p>
             <SeuilsLecture seuils={profil.seuils} />
+            <h2>Ma vitesse critique</h2>
+            <VitesseCritique records={profil.records} />
+          </section>
+          <section className="carte section">
+            <h2>Mes zones</h2>
+            <p className="texte-discret">
+              Allures et fréquences cardiaques définies par votre coach.
+            </p>
+            <ZonesLecture zones={profil.zones} />
           </section>
           <section className="carte section">
             <h2>Mes records</h2>
             <p className="texte-discret">
-              Temps au format mm:ss ou h:mm:ss. Votre coach peut les consulter.
+              Temps au format mm:ss ou h:mm:ss. Votre coach peut les consulter et les compléter.
             </p>
             <RecordsForm records={profil.records} onEnregistre={setProfil} />
           </section>

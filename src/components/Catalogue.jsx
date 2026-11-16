@@ -90,13 +90,13 @@ export default function Catalogue({ catalogue }) {
                   <strong>{m.titre}</strong>
                   <span className="texte-discret">
                     {libelleType(m.type)}
-                    {m.blocs.length > 0 && ` · ${resumerTotaux(m.blocs)}`}
+                    {m.blocs.length > 0 && ` · ${resumerTotaux(m.blocs, { sport: m.sport })}`}
                   </span>
                 </button>
               </Deplacable>
               {ouvert === m.id && (
                 <div className="catalogue-detail">
-                  <BlocsAffichage blocs={m.blocs} />
+                  <BlocsAffichage blocs={m.blocs} sport={m.sport} />
                   {m.description && <p className="details-description">{m.description}</p>}
                   <div className="page-actions">
                     <button

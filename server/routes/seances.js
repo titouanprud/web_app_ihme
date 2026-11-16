@@ -5,6 +5,7 @@ import { HttpError } from '../errors.js';
 import { verifierAccesAthlete } from '../liens.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
 import {
+  allureIndicative,
   estimerBlocs,
   estimerSeance,
   referencesSansAllure,
@@ -104,28 +105,33 @@ const LIBELLES_REFERENCE = {
   '42k': '@42k',
   sv1: '@SV1',
   sv2: '@SV2',
+  vc: '@VC',
 };
 
-// Les allures de référence encore vides (ex. séance créée depuis un modèle) sont calculées
-// avec le profil de l'athlète. Si le profil ne contient pas la valeur, le coach doit la saisir.
-export async function completerAllures(blocs, athleteId) {
-  if (referencesSansAllure(blocs).length === 0) return blocs;
-  const resolus = resoudreReferences(blocs, await lireProfil(athleteId));
-  const manquantes = referencesSansAllure(resolus).map((ref) => LIBELLES_REFERENCE[ref]);
+// Prépare une séance validée (résultat de lireSeance) avant son écriture, avec le profil
+// de l'athlète :
+// - les allures de référence encore vides (ex. séance créée depuis un modèle) sont calculées ;
+//   si le profil ne contient pas la valeur, le coach doit la saisir ;
+// - en course à pied, les cibles en zone reçoivent l'allure de la zone (si elle est connue) ;
+// - la durée et la distance estimées sont calculées (allure indicative pour les blocs
+//   sans allure, voir allureIndicative), pour les totaux du calendrier.
+export async function preparerSeance(s, athleteId) {
+  const profil = await lireProfil(athleteId);
+  const blocs = resoudreReferences(s.blocs, profil, s.sport);
+  const manquantes = referencesSansAllure(blocs).map((ref) => LIBELLES_REFERENCE[ref]);
   if (manquantes.length > 0) {
     throw new HttpError(
       400,
       `Allure ${manquantes.join(', ')} absente du profil de l’athlète : saisissez-la dans le bloc.`,
     );
   }
-  return resolus;
+  const allure = allureIndicative(s.sport, profil);
+  return { ...s, blocs, ...estimerSeance(blocs, s.dureePrevueMin, allure) };
 }
 
-// Écriture d'une séance déjà validée (s = résultat de lireSeance, allures complétées).
-// La durée et la distance estimées sont calculées ici, à chaque enregistrement.
+// Écriture d'une séance préparée (preparerSeance).
 // "db" vaut le pool, ou un client quand l'écriture fait partie d'une transaction.
 function valeursSeance(s) {
-  const { dureeSec, distanceM } = estimerSeance(s.blocs, s.dureePrevueMin);
   return [
     s.date,
     s.titre,
@@ -135,8 +141,8 @@ function valeursSeance(s) {
     s.description,
     JSON.stringify(s.blocs),
     s.dplusPrevuM,
-    dureeSec,
-    distanceM,
+    s.dureeSec,
+    s.distanceM,
   ];
 }
 
@@ -245,9 +251,8 @@ router.get('/totaux', requireAuth, async (req, res) => {
 // (athlete_id = coach_id : pas de validation nécessaire)
 router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
   const athleteId = valider.identifiant(req.body?.athleteId, "L'athlète");
-  const s = lireSeance(req.body);
   await verifierAccesAthlete(req.user.id, athleteId);
-  s.blocs = await completerAllures(s.blocs, athleteId);
+  const s = await preparerSeance(lireSeance(req.body), athleteId);
   const id = await insererSeance(req.user.id, athleteId, s);
   res.status(201).json(await trouverSeance(id));
 });
@@ -255,7 +260,7 @@ router.post('/', requireAuth, requireRole('coach'), async (req, res) => {
 // PUT /api/seances/:id : le coach modifie une de ses séances
 router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
   const id = valider.identifiant(req.params.id);
-  const s = lireSeance(req.body);
+  const lue = lireSeance(req.body);
 
   // La condition coach_id garantit qu'un coach ne modifie que ses propres séances.
   // L'athlète de la séance sert à compléter les allures de référence avec son profil.
@@ -264,7 +269,7 @@ router.put('/:id', requireAuth, requireRole('coach'), async (req, res) => {
     [id, req.user.id],
   );
   if (!existante.rows[0]) throw new HttpError(404, 'Séance introuvable.');
-  s.blocs = await completerAllures(s.blocs, existante.rows[0].athlete_id);
+  const s = await preparerSeance(lue, existante.rows[0].athlete_id);
   await modifierSeance(id, s);
   res.json(await trouverSeance(id));
 });
@@ -287,8 +292,7 @@ router.post('/depuis-modele', requireAuth, requireRole('coach'), async (req, res
   if (!rows[0]) throw new HttpError(404, 'Modèle introuvable.');
 
   // Le modèle repasse par les mêmes vérifications qu'une séance saisie à la main
-  const s = lireSeance({ ...rows[0], date });
-  s.blocs = await completerAllures(s.blocs, athleteId);
+  const s = await preparerSeance(lireSeance({ ...rows[0], date }), athleteId);
   const id = await insererSeance(req.user.id, athleteId, s);
   res.status(201).json(await trouverSeance(id));
 });

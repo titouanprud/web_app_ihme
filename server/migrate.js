@@ -1,5 +1,6 @@
 import { pool } from './db.js';
-import { estimerSeance } from './partage/estimation.js';
+import { allureIndicative, estimerSeance } from './partage/estimation.js';
+import { lireProfil } from './routes/profil.js';
 
 // Migration idempotente : peut être relancée à chaque démarrage sans rien casser.
 // "IF NOT EXISTS" crée seulement ce qui manque et ne supprime jamais de données.
@@ -86,7 +87,7 @@ ALTER TABLE seances ADD COLUMN IF NOT EXISTS distance_estimee_m INTEGER;
 -- les modèles qu'il supprime ensuite ne sont pas recréés.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS catalogue_initialise BOOLEAN NOT NULL DEFAULT false;
 
--- Records personnels de l'athlète (saisis par lui) : un temps par distance
+-- Records personnels de l'athlète (saisis par lui ou son coach) : un temps par distance
 CREATE TABLE IF NOT EXISTS records (
   athlete_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   distance    TEXT NOT NULL CHECK (distance IN ('5k', '10k', 'semi', 'marathon')),
@@ -94,6 +95,11 @@ CREATE TABLE IF NOT EXISTS records (
   date_record DATE,
   PRIMARY KEY (athlete_id, distance)
 );
+-- Records sur 1200 m et 3600 m (vitesse critique) : la contrainte des distances est
+-- remplacée par une version plus large (DROP puis ADD, rejouable sans risque).
+ALTER TABLE records DROP CONSTRAINT IF EXISTS records_distance_check;
+ALTER TABLE records ADD CONSTRAINT records_distance_check
+  CHECK (distance IN ('1200m', '3600m', '5k', '10k', 'semi', 'marathon'));
 
 -- Seuils ventilatoires SV1 / SV2 estimés par le coach (allure en s/km, FC en bpm)
 CREATE TABLE IF NOT EXISTS seuils (
@@ -104,6 +110,29 @@ CREATE TABLE IF NOT EXISTS seuils (
   sv2_fc         INTEGER CHECK (sv2_fc BETWEEN 60 AND 230),
   date_maj       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Zones 1 à 5 de l'athlète, définies par le coach : allures (s/km, min = la plus rapide)
+-- et fréquences cardiaques. Chaque valeur est facultative.
+CREATE TABLE IF NOT EXISTS zones (
+  athlete_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  zone           INTEGER NOT NULL CHECK (zone BETWEEN 1 AND 5),
+  allure_min_sec INTEGER CHECK (allure_min_sec BETWEEN 120 AND 1200),
+  allure_max_sec INTEGER CHECK (allure_max_sec BETWEEN 120 AND 1200),
+  fc_min         INTEGER CHECK (fc_min BETWEEN 40 AND 230),
+  fc_max         INTEGER CHECK (fc_max BETWEEN 40 AND 230),
+  PRIMARY KEY (athlete_id, zone)
+);
+
+-- Base d'exercices de renforcement : coach_id NULL = base commune, sinon exercice d'un coach.
+-- Index unique sur (coach, nom sans majuscules) ; COALESCE car NULL n'est jamais égal à NULL.
+CREATE TABLE IF NOT EXISTS exercices (
+  id        SERIAL PRIMARY KEY,
+  coach_id  INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  nom       TEXT NOT NULL,
+  categorie TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS exercices_nom_idx
+  ON exercices ((COALESCE(coach_id, 0)), (lower(nom)));
 
 -- Messagerie : une conversation par binôme coach / athlète.
 CREATE TABLE IF NOT EXISTS messages (
@@ -166,20 +195,98 @@ CREATE TABLE IF NOT EXISTS app_settings (
 // Numéro arbitraire qui identifie le verrou de migration.
 const VERROU_MIGRATION = 20261027;
 
-// Rattrapage des anciennes séances : on calcule leur durée et leur distance estimées
-// en JavaScript (même fonction que les routes). Ne touche que les séances pas encore calculées :
-// relancer la migration ne refait rien.
+// Base commune d'exercices de renforcement (ajoutée une fois, jamais en double)
+const EXERCICES_DE_BASE = {
+  jambes: [
+    'Squat',
+    'Squat bulgare',
+    'Fentes avant',
+    'Fentes marchées',
+    'Soulevé de terre',
+    'Soulevé de terre jambes tendues',
+    'Hip thrust',
+    'Pont fessier',
+    'Montées sur banc',
+    'Presse à cuisses',
+    'Leg curl',
+    'Mollets debout',
+    'Chaise',
+  ],
+  haut_du_corps: [
+    'Pompes',
+    'Développé couché',
+    'Développé militaire',
+    'Tractions',
+    'Rowing haltère',
+    'Dips',
+    'Tirage horizontal',
+  ],
+  gainage: [
+    'Planche',
+    'Planche latérale',
+    'Superman',
+    'Dead bug',
+    'Bird dog',
+    'Crunch',
+    'Relevés de jambes',
+    'Rotations russes',
+  ],
+  pliometrie: [
+    'Sauts de grenouille',
+    'Squats sautés',
+    'Bondissements',
+    'Corde à sauter',
+    'Box jump',
+  ],
+  mobilite: ['Mobilité de hanche', 'Étirements ischio-jambiers', 'Fentes avec rotation'],
+};
+
+async function ajouterExercicesDeBase(client) {
+  for (const [categorie, noms] of Object.entries(EXERCICES_DE_BASE)) {
+    for (const nom of noms) {
+      await client.query(
+        `INSERT INTO exercices (coach_id, nom, categorie) VALUES (NULL, $1, $2)
+         ON CONFLICT ((COALESCE(coach_id, 0)), (lower(nom))) DO NOTHING`,
+        [nom, categorie],
+      );
+    }
+  }
+}
+
+// Version de la règle d'estimation. La version 2 donne une distance indicative aux blocs
+// sans allure (allure de la zone 2, de SV1 ou par défaut) : les séances calculées avec
+// une version plus ancienne sont recalculées une fois.
+const VERSION_ESTIMATION = '2';
+
+// Calcule la durée et la distance estimées des séances, en JavaScript (même fonction que les
+// routes, avec le profil de chaque athlète). Ne touche que les séances pas encore calculées,
+// ou toutes si la règle d'estimation a changé : relancer la migration ne refait rien.
 async function completerEstimations(client) {
-  const { rows } = await client.query(
-    `SELECT id, blocs, duree_prevue_min FROM seances WHERE duree_estimee_sec IS NULL`,
+  const version = await client.query(
+    `SELECT valeur FROM app_settings WHERE cle = 'version_estimation'`,
   );
+  const aJour = version.rows[0]?.valeur === VERSION_ESTIMATION;
+  const { rows } = await client.query(
+    `SELECT id, athlete_id, sport, blocs, duree_prevue_min FROM seances
+     ${aJour ? 'WHERE duree_estimee_sec IS NULL' : ''}`,
+  );
+  const profils = new Map();
   for (const seance of rows) {
-    const { dureeSec, distanceM } = estimerSeance(seance.blocs, seance.duree_prevue_min);
+    if (!profils.has(seance.athlete_id)) {
+      profils.set(seance.athlete_id, await lireProfil(seance.athlete_id, client));
+    }
+    const allure = allureIndicative(seance.sport, profils.get(seance.athlete_id));
+    const { dureeSec, distanceM } = estimerSeance(seance.blocs, seance.duree_prevue_min, allure);
     await client.query(
       'UPDATE seances SET duree_estimee_sec = $1, distance_estimee_m = $2 WHERE id = $3',
       [dureeSec, distanceM, seance.id],
     );
   }
+  await client.query(
+    `INSERT INTO app_settings (cle, valeur) VALUES ('version_estimation', $1)
+     ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`,
+    [VERSION_ESTIMATION],
+  );
 }
 
 export async function migrate() {
@@ -188,6 +295,7 @@ export async function migrate() {
     // Le verrou évite que deux processus lancés en même temps créent les tables en parallèle.
     await client.query('SELECT pg_advisory_lock($1)', [VERROU_MIGRATION]);
     await client.query(SCHEMA);
+    await ajouterExercicesDeBase(client);
     await completerEstimations(client);
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [VERROU_MIGRATION]).catch(() => {});

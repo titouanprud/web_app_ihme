@@ -12,6 +12,13 @@ import { REFERENCES } from './partage/estimation.js';
 //              allure_sec: allure copiée du profil (s/km), modifiee: true si le coach l'a changée },
 //     dplus: dénivelé positif visé en mètres (facultatif : course, vélo, ski-alpinisme),
 //     note: texte court }
+//   En course à pied, une cible en zone garde aussi l'allure de la zone tirée du profil :
+//     { type: 'zone', min, max, allure_sec }
+// Exercice de renforcement (seul type de bloc possible en renfo, avec la répétition) :
+//   { type: 'exercice', nom, series: 1 à 20,
+//     repetitions: 1 à 200  OU  duree_sec: 5 à 3600 (ex. gainage 45 s),
+//     repos_sec: 0 à 900 (entre deux séries), charge_kg: 0 à 500 par pas de 0,5 (facultatif),
+//     note }
 // Répétition (un seul niveau) :
 //   { type: 'repetition', repetitions: 2 à 50, blocs: [blocs simples] }
 
@@ -19,13 +26,15 @@ export const SPORTS = ['course', 'velo', 'ski_alpi', 'renfo', 'autre'];
 // Sports pour lesquels un D+ (dénivelé positif) peut être prévu
 export const SPORTS_AVEC_DPLUS = ['course', 'velo', 'ski_alpi'];
 const TYPES_BLOC = ['echauffement', 'intervalle', 'recuperation', 'retour_calme'];
+// En renforcement, une séance est une liste d'exercices (et de circuits = répétitions)
+export const SPORT_EXERCICES = 'renfo';
 
 // Cibles autorisées selon le sport
 const CIBLES_PAR_SPORT = {
   course: ['allure', 'reference', 'zone', 'aucune'],
   velo: ['puissance', 'zone', 'aucune'],
   ski_alpi: ['zone', 'aucune'],
-  renfo: ['zone', 'aucune'],
+  renfo: [],
   autre: ['zone', 'aucune'],
 };
 
@@ -89,10 +98,71 @@ function validerCible(cible, sport, position, modele) {
   if (max !== null && max < min) {
     throw erreur(position, 'la fin de la fourchette doit être supérieure au début.');
   }
+  // Zone en course à pied : allure de la zone (copiée du profil), pas gardée dans un modèle
+  if (type === 'zone' && sport === 'course' && !modele) {
+    const allure = cible.allure_sec ?? null;
+    if (allure !== null && !entierDansBornes(allure, BORNES_CIBLE.allure)) {
+      throw erreur(position, `${BORNES_CIBLE.allure.libelle} est invalide.`);
+    }
+    return { type, min, max, allure_sec: allure };
+  }
   return { type, min, max };
 }
 
+// Exercice de renforcement
+function validerExercice(bloc, position) {
+  const nom = typeof bloc.nom === 'string' ? bloc.nom.trim() : '';
+  if (!nom || nom.length > 100) {
+    throw erreur(position, 'le nom de l’exercice est obligatoire (100 caractères au plus).');
+  }
+  if (!entierDansBornes(bloc.series, { min: 1, max: 20 })) {
+    throw erreur(position, 'le nombre de séries doit être entre 1 et 20.');
+  }
+  const absent = (v) => v === undefined || v === null || v === '';
+  const avecRepetitions = !absent(bloc.repetitions);
+  const avecDuree = !absent(bloc.duree_sec);
+  if (avecRepetitions === avecDuree) {
+    throw erreur(position, 'indiquer soit un nombre de répétitions, soit une durée.');
+  }
+  if (avecRepetitions && !entierDansBornes(bloc.repetitions, { min: 1, max: 200 })) {
+    throw erreur(position, 'le nombre de répétitions doit être entre 1 et 200.');
+  }
+  if (avecDuree && !entierDansBornes(bloc.duree_sec, { min: 5, max: 3600 })) {
+    throw erreur(position, 'la durée de l’effort doit être entre 0:05 et 60:00.');
+  }
+  const repos = absent(bloc.repos_sec) ? 0 : bloc.repos_sec;
+  if (!entierDansBornes(repos, { min: 0, max: 900 })) {
+    throw erreur(position, 'le repos doit être entre 0:00 et 15:00.');
+  }
+  let charge = null;
+  if (!absent(bloc.charge_kg)) {
+    charge = bloc.charge_kg;
+    // Pas de 0,5 kg : charge × 2 doit être un entier
+    if (typeof charge !== 'number' || !Number.isInteger(charge * 2) || charge < 0 || charge > 500) {
+      throw erreur(position, 'la charge doit être entre 0 et 500 kg (par pas de 0,5).');
+    }
+  }
+  const note = typeof bloc.note === 'string' ? bloc.note.trim() : '';
+  if (note.length > 200) throw erreur(position, 'la note ne doit pas dépasser 200 caractères.');
+
+  return {
+    type: 'exercice',
+    nom,
+    series: bloc.series,
+    ...(avecRepetitions ? { repetitions: bloc.repetitions } : { duree_sec: bloc.duree_sec }),
+    repos_sec: repos,
+    charge_kg: charge,
+    note,
+  };
+}
+
 function validerBlocSimple(bloc, sport, position, modele) {
+  if (sport === SPORT_EXERCICES) {
+    if (bloc?.type !== 'exercice') {
+      throw erreur(position, 'une séance de renforcement se compose d’exercices.');
+    }
+    return validerExercice(bloc, position);
+  }
   if (!TYPES_BLOC.includes(bloc?.type)) throw erreur(position, 'type de bloc inconnu.');
   if (!['duree', 'distance'].includes(bloc.mesure)) {
     throw erreur(position, 'choisir une durée ou une distance.');

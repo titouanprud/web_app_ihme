@@ -11,9 +11,14 @@ import { MODELES_DE_DEPART } from '../server/catalogueDepart.js';
 import { loadJwtSecret } from '../server/jwt.js';
 import {
   allureDeReference,
+  allureDeZone,
+  allureIndicative,
   estimerBloc,
   estimerBlocs,
+  estimerSeance,
   resoudreReferences,
+  vitesseCritique,
+  zonesDepuisSeuils,
 } from '../server/partage/estimation.js';
 import { moisDeLaSemaine, periodeAffichee } from '../src/calendrier.js';
 
@@ -886,14 +891,14 @@ describe('calendrier et totaux', () => {
     assert.equal(res.body.dureeEstimeeSec, 1200 + 480);
     assert.equal(res.body.distanceEstimeeM, 6000);
 
-    // Sans blocs : la durée prévue saisie, pas de distance
+    // Sans blocs : la durée prévue saisie, et une distance indicative (6:00 /km par défaut)
     const simple = await api('seances', {
       method: 'POST',
       token: coach.token,
       body: { ...SEANCE, athleteId: athlete.user.id },
     });
     assert.equal(simple.body.dureeEstimeeSec, 45 * 60);
-    assert.equal(simple.body.distanceEstimeeM, 0);
+    assert.equal(simple.body.distanceEstimeeM, 7500);
   });
 
   test('totaux par semaine et par mois, sur le prévu', async () => {
@@ -1438,5 +1443,252 @@ describe('messagerie', () => {
       body: { contenu: '   ' },
     });
     assert.equal(res.status, 400);
+  });
+});
+
+describe('vitesse critique, zones et distance indicative', () => {
+  const SEUILS = { sv1Allure: 300, sv1Fc: 150, sv2Allure: 250, sv2Fc: 170 };
+
+  test('vitesse critique calculée avec les records 1200 m et 3600 m', () => {
+    // 1200 m en 4:00 et 3600 m en 14:00 : VC = 2400 m ÷ 600 s = 4 m/s = 14,4 km/h (4:10 /km)
+    const vc = vitesseCritique([
+      { distance: '1200m', tempsSec: 240 },
+      { distance: '3600m', tempsSec: 840 },
+    ]);
+    assert.deepEqual(vc, { vitesseMs: 4, kmh: 14.4, allureSec: 250, dPrimeM: 240 });
+    // Record manquant, ou 3600 m couru plus vite que le 1200 m : pas de VC
+    assert.equal(vitesseCritique([{ distance: '1200m', tempsSec: 240 }]), null);
+    assert.equal(
+      vitesseCritique([
+        { distance: '1200m', tempsSec: 240 },
+        { distance: '3600m', tempsSec: 700 },
+      ]),
+      null,
+    );
+  });
+
+  test('allure d’une zone, zones proposées depuis les seuils, allure indicative', () => {
+    const zones = zonesDepuisSeuils(SEUILS);
+    assert.deepEqual(zones[1], { zone: 2, allureMin: 300, allureMax: 330, fcMin: 140, fcMax: 150 });
+    const profil = { seuils: SEUILS, zones };
+    assert.equal(allureDeZone(2, null, profil), 315);
+    assert.equal(allureDeZone(2, 3, profil), 295); // moyenne de Z2 (315) et Z3 (275)
+    assert.equal(allureIndicative('course', profil), 315); // zone 2
+    assert.equal(allureIndicative('course', { seuils: SEUILS }), 330); // SV1 + 10 %
+    assert.equal(allureIndicative('course', null), 360); // 6:00 /km
+    assert.equal(allureIndicative('velo', null), 144); // 25 km/h
+    assert.equal(allureIndicative('ski_alpi', profil), null);
+  });
+
+  test('un bloc sans allure a une distance indicative', () => {
+    const blocs = [
+      { type: 'intervalle', mesure: 'duree', valeur: 1800, cible: { type: 'zone', min: 1 } },
+    ];
+    const t = estimerBlocs(blocs, { allureDefaut: 360 });
+    assert.equal(t.distance, 5000);
+    assert.equal(t.distanceComplete, false); // indicative
+    assert.equal(t.distanceManque, false);
+    // Sans allure par défaut : distance inconnue, comme avant
+    assert.equal(estimerBlocs(blocs).distanceManque, true);
+    // Vélo : 1 h à 25 km/h
+    assert.equal(estimerSeance([], 60, 144).distanceM, 25000);
+  });
+
+  test('le coach saisit les records 1200 / 3600 m de l’athlète', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const records = [
+      { distance: '1200m', tempsSec: 240 },
+      { distance: '3600m', tempsSec: 840 },
+    ];
+    const res = await api(`profil/records?athleteId=${athlete.user.id}`, {
+      method: 'PUT',
+      token: coach.token,
+      body: { records },
+    });
+    assert.equal(res.status, 200);
+    const vu = await api('profil', { token: athlete.token });
+    assert.equal(vu.body.records.length, 2);
+    assert.equal(allureDeReference('vc', vu.body), 250);
+
+    // Un autre coach ne peut pas
+    const autre = await creerCompte('coach');
+    const refus = await api(`profil/records?athleteId=${athlete.user.id}`, {
+      method: 'PUT',
+      token: autre.token,
+      body: { records },
+    });
+    assert.equal(refus.status, 403);
+    // Un athlète qui passe athleteId modifie quand même seulement les siens
+    const autreAthlete = await creerCompte('athlete');
+    await api(`profil/records?athleteId=${athlete.user.id}`, {
+      method: 'PUT',
+      token: autreAthlete.token,
+      body: { records: [] },
+    });
+    assert.equal((await api('profil', { token: athlete.token })).body.records.length, 2);
+  });
+
+  test('zones : le coach les définit, l’athlète les lit ; la séance prend l’allure de la zone', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const zones = zonesDepuisSeuils(SEUILS);
+    const res = await api(`profil/zones/${athlete.user.id}`, {
+      method: 'PUT',
+      token: coach.token,
+      body: { zones },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.zones.length, 5);
+    assert.equal((await api('profil', { token: athlete.token })).body.zones[1].allureMax, 330);
+
+    // Zone incohérente, ou athlète qui modifie ses zones : refusé
+    const incoherente = await api(`profil/zones/${athlete.user.id}`, {
+      method: 'PUT',
+      token: coach.token,
+      body: { zones: [{ zone: 2, allureMin: 330, allureMax: 300 }] },
+    });
+    assert.equal(incoherente.status, 400);
+    const parAthlete = await api(`profil/zones/${athlete.user.id}`, {
+      method: 'PUT',
+      token: athlete.token,
+      body: { zones },
+    });
+    assert.equal(parAthlete.status, 403);
+
+    // 45 min en Z2 : allure de la zone (5:15 /km) copiée dans le bloc, distance ≈ 8,57 km
+    const seance = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: {
+        ...SEANCE,
+        athleteId: athlete.user.id,
+        dureePrevueMin: null,
+        blocs: [
+          { type: 'intervalle', mesure: 'duree', valeur: 2700, cible: { type: 'zone', min: 2 } },
+        ],
+      },
+    });
+    assert.equal(seance.status, 201);
+    assert.equal(seance.body.blocs[0].cible.allure_sec, 315);
+    assert.equal(seance.body.distanceEstimeeM, Math.round((2700 / 315) * 1000));
+  });
+
+  test('résolution : la zone ne reçoit une allure qu’en course à pied', () => {
+    const profil = { zones: zonesDepuisSeuils(SEUILS) };
+    const bloc = {
+      type: 'intervalle',
+      mesure: 'duree',
+      valeur: 600,
+      cible: { type: 'zone', min: 2 },
+    };
+    assert.equal(resoudreReferences([bloc], profil, 'course')[0].cible.allure_sec, 315);
+    assert.equal(resoudreReferences([bloc], profil, 'velo')[0].cible.allure_sec, undefined);
+  });
+});
+
+describe('renforcement : exercices', () => {
+  const EXERCICES = [
+    { type: 'exercice', nom: 'Squat', series: 4, repetitions: 10, repos_sec: 90, charge_kg: 42.5 },
+    {
+      type: 'repetition',
+      repetitions: 3,
+      blocs: [{ type: 'exercice', nom: 'Planche', series: 1, duree_sec: 45, repos_sec: 15 }],
+    },
+  ];
+  const RENFO = { ...SEANCE, titre: 'Renfo', sport: 'renfo', type: 'renfo', dureePrevueMin: null };
+
+  test('une séance de renfo se compose d’exercices, avec une durée estimée', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const res = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...RENFO, athleteId: athlete.user.id, blocs: EXERCICES },
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.blocs[0].charge_kg, 42.5);
+    assert.equal(res.body.blocs[1].blocs[0].duree_sec, 45);
+    // 4 × (10 × 4 s + 90 s) + 3 × 1 × (45 s + 15 s) = 520 + 180
+    assert.equal(res.body.dureeEstimeeSec, 700);
+    assert.equal(res.body.distanceEstimeeM, 0);
+
+    // La durée prévue saisie par le coach l'emporte sur l'estimation
+    const saisie = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...RENFO, athleteId: athlete.user.id, blocs: EXERCICES, dureePrevueMin: 30 },
+    });
+    assert.equal(saisie.body.dureeEstimeeSec, 1800);
+  });
+
+  test('exercices invalides et anciens blocs refusés en renfo', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const envoyer = (blocs) =>
+      api('seances', {
+        method: 'POST',
+        token: coach.token,
+        body: { ...RENFO, athleteId: athlete.user.id, blocs },
+      });
+    const exercice = { type: 'exercice', nom: 'Squat', series: 3, repetitions: 10 };
+    for (const blocs of [
+      [{ type: 'echauffement', mesure: 'duree', valeur: 600 }],
+      [{ ...exercice, nom: '' }],
+      [{ ...exercice, series: 0 }],
+      [{ ...exercice, duree_sec: 30 }], // répétitions ET durée
+      [{ ...exercice, charge_kg: 10.3 }], // pas de 0,5 kg
+      [{ ...exercice, repos_sec: 1000 }],
+    ]) {
+      assert.equal((await envoyer(blocs)).status, 400, JSON.stringify(blocs));
+    }
+    // Un exercice hors renfo est refusé aussi
+    const course = await api('seances', {
+      method: 'POST',
+      token: coach.token,
+      body: { ...SEANCE, athleteId: athlete.user.id, blocs: [exercice] },
+    });
+    assert.equal(course.status, 400);
+  });
+
+  test('base d’exercices : commune, plus les exercices de chaque coach', async () => {
+    const { coach, athlete } = await creerCoachEtAthlete();
+    const base = await api('exercices', { token: coach.token });
+    assert.equal(base.status, 200);
+    assert.ok(base.body.some((e) => e.nom === 'Squat' && !e.personnel));
+
+    const nom = `Exercice ${crypto.randomUUID().slice(0, 8)}`;
+    const cree = await api('exercices', {
+      method: 'POST',
+      token: coach.token,
+      body: { nom, categorie: 'jambes' },
+    });
+    assert.equal(cree.status, 201);
+    assert.equal(cree.body.personnel, true);
+    // Doublon (même sans majuscules), ou nom de la base commune : refusé
+    const doublon = await api('exercices', {
+      method: 'POST',
+      token: coach.token,
+      body: { nom: nom.toLowerCase(), categorie: 'jambes' },
+    });
+    assert.equal(doublon.status, 409);
+    const commun = await api('exercices', {
+      method: 'POST',
+      token: coach.token,
+      body: { nom: 'squat', categorie: 'jambes' },
+    });
+    assert.equal(commun.status, 409);
+
+    // L'athlète voit les exercices de son coach ; un autre coach ne les voit pas
+    const vuAthlete = await api('exercices', { token: athlete.token });
+    assert.ok(vuAthlete.body.some((e) => e.nom === nom));
+    const autre = await creerCompte('coach');
+    const vuAutre = await api('exercices', { token: autre.token });
+    assert.ok(!vuAutre.body.some((e) => e.nom === nom));
+    // Ni l'athlète ni un autre coach ne peuvent le supprimer ; son coach oui
+    const supprimer = (token) => api(`exercices/${cree.body.id}`, { method: 'DELETE', token });
+    assert.equal((await supprimer(athlete.token)).status, 403);
+    assert.equal((await supprimer(autre.token)).status, 404);
+    assert.equal((await supprimer(coach.token)).status, 204);
+    // La base commune ne se supprime pas
+    const squat = base.body.find((e) => e.nom === 'Squat');
+    const commune = await api(`exercices/${squat.id}`, { method: 'DELETE', token: coach.token });
+    assert.equal(commune.status, 404);
   });
 });

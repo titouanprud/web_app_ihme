@@ -22,7 +22,7 @@ function BoutonSeance({ seance: s, onOuvrir, mini }) {
   return (
     <button
       type="button"
-      className={`carte-seance type-${s.type}${mini ? ' carte-mini' : ''}`}
+      className={`carte-seance sport-${s.sport}${mini ? ' carte-mini' : ''}`}
       onClick={() => onOuvrir(s)}
       title={mini ? `${s.titre} · ${libelleSport(s.sport)}` : undefined}
     >

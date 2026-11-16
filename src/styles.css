@@ -737,24 +737,11 @@ a.btn {
   font-size: 0.75rem;
   color: var(--texte-discret);
 }
-/* Couleur de la bordure selon le type de séance */
-.type-endurance {
-  border-left-color: #2563eb;
-}
-.type-fractionne {
-  border-left-color: #dc2626;
-}
-.type-renfo {
-  border-left-color: #7c3aed;
-}
-.type-competition {
-  border-left-color: #ea580c;
-}
-.type-repos {
-  border-left-color: #94a3b8;
-}
-.type-autre {
-  border-left-color: #0d9488;
+/* Couleur de la carte selon le sport (variable --sport, voir .sport-course…) :
+   bordure de gauche et fond légèrement teinté */
+.carte-seance[class*='sport-'] {
+  border-left-color: var(--sport, var(--primaire));
+  background: color-mix(in srgb, var(--sport, var(--primaire)) 7%, var(--surface));
 }
 
 .badge {
@@ -1034,6 +1021,19 @@ a.btn {
   flex-direction: column;
   align-items: stretch;
 }
+/* Exercice de renforcement : nom en gras à la place du type de bloc */
+.bloc-exercice {
+  --couleur-bloc: #7c3aed;
+}
+.bloc-lecture.bloc-exercice .bloc-lecture-type {
+  color: var(--texte);
+  font-weight: 600;
+}
+.ajout-exercice {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
 
 /* ===== Duplication et bibliothèque ===== */
 .form-actions-multiples {
@@ -1183,6 +1183,33 @@ a.btn {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+.profil-coach-contenu .profil-zones {
+  grid-column: 1 / -1;
+}
+/* Tableau des zones : une couleur par zone, de la plus facile à la plus intense */
+.tableau-zones td:first-child {
+  border-left: 4px solid var(--zone);
+  width: 3.5rem;
+}
+.tableau-zones input {
+  width: 100%;
+  min-width: 4.5rem;
+}
+.zone-1 {
+  --zone: #94a3b8;
+}
+.zone-2 {
+  --zone: #16a34a;
+}
+.zone-3 {
+  --zone: #ca8a04;
+}
+.zone-4 {
+  --zone: #ea580c;
+}
+.zone-5 {
+  --zone: #dc2626;
 }
 
 /* ===== Mobile ===== */
@@ -1432,6 +1459,29 @@ a.btn {
 }
 .sport-autre {
   --sport: #94a3b8;
+}
+.legende-sports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--texte-discret);
+}
+.legende-sports li::before {
+  content: '';
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.3rem;
+  border-radius: 3px;
+  vertical-align: -0.1rem;
+  background: var(--sport);
+}
+.vue-jour-seance[class*='sport-'] {
+  border-left: 4px solid var(--sport);
 }
 
 /* ===== Vue Jour ===== */

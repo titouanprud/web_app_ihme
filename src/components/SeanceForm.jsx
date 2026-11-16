@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import {
+  SPORT_EXERCICES,
   SPORTS,
   SPORTS_AVEC_DPLUS,
   adapterAuSport,
+  compterBlocs,
   resoudreReferences,
   resumerTotaux,
   totaux,
@@ -26,21 +28,26 @@ export default function SeanceForm({
   profil = null,
 }) {
   const modele = !avecDate;
+  // Les anciennes séances avaient un sport en texte libre : on les range dans "Autre"
+  const sportInitial = SPORTS_CONNUS.includes(initial.sport)
+    ? initial.sport
+    : initial.sport
+      ? 'autre'
+      : 'course';
+  // Les blocs sont adaptés au sport : une ancienne séance de renfo (échauffement,
+  // intervalles…) perd ces blocs, remplacés par des exercices. On prévient le coach.
+  const blocsInitiaux = adapterAuSport(initial.blocs ?? [], sportInitial);
+  const blocsRetires = compterBlocs(initial.blocs ?? []) - compterBlocs(blocsInitiaux);
   const [valeurs, setValeurs] = useState({
     date: initial.date ?? '',
     titre: initial.titre ?? '',
-    // Les anciennes séances avaient un sport en texte libre : on les range dans "Autre"
-    sport: SPORTS_CONNUS.includes(initial.sport)
-      ? initial.sport
-      : initial.sport
-        ? 'autre'
-        : 'course',
-    type: initial.type ?? 'endurance',
+    sport: sportInitial,
+    type: initial.type ?? (sportInitial === SPORT_EXERCICES ? 'renfo' : 'endurance'),
     dureePrevueMin: initial.dureePrevueMin ?? '',
     dplusPrevuM: initial.dplusPrevuM ?? '',
     description: initial.description ?? '',
-    // Séance créée depuis un modèle : les références reçoivent l'allure du profil
-    blocs: modele ? (initial.blocs ?? []) : resoudreReferences(initial.blocs ?? [], profil),
+    // Séance créée depuis un modèle : les références et les zones reçoivent l'allure du profil
+    blocs: modele ? blocsInitiaux : resoudreReferences(blocsInitiaux, profil, sportInitial),
   });
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState('');
@@ -48,11 +55,19 @@ export default function SeanceForm({
   const changer = (e) => setValeurs({ ...valeurs, [e.target.name]: e.target.value });
   const changerSport = (e) => {
     const sport = e.target.value;
-    setValeurs({ ...valeurs, sport, blocs: adapterAuSport(valeurs.blocs, sport) });
+    const blocs = adapterAuSport(valeurs.blocs, sport);
+    setValeurs({
+      ...valeurs,
+      sport,
+      blocs: modele ? blocs : resoudreReferences(blocs, profil, sport),
+      ...(sport === SPORT_EXERCICES && { type: 'renfo' }),
+    });
   };
 
-  // Si les blocs permettent de calculer la durée, elle est remplie automatiquement
-  const t = totaux(valeurs.blocs);
+  // Si les blocs permettent de calculer la durée exacte, elle est remplie automatiquement.
+  // En renfo, la durée des exercices n'est qu'une estimation : le coach garde la main.
+  const options = { sport: valeurs.sport, profil: modele ? null : profil };
+  const t = totaux(valeurs.blocs, options);
   const dureeAuto = valeurs.blocs.length > 0 && t.dureeComplete ? Math.round(t.duree / 60) : null;
   // Même principe pour le D+ : somme des blocs, sinon saisie directe
   const avecDplus = SPORTS_AVEC_DPLUS.includes(valeurs.sport);
@@ -124,6 +139,12 @@ export default function SeanceForm({
 
       <fieldset className="structure">
         <legend>Structure de la séance</legend>
+        {blocsRetires > 0 && (
+          <p className="texte-discret">
+            {blocsRetires} ancien(s) bloc(s) ne correspondent pas à ce sport (en renforcement, la
+            séance se compose d’exercices) : ils seront retirés à l’enregistrement.
+          </p>
+        )}
         <BlocsEditor
           blocs={valeurs.blocs}
           sport={valeurs.sport}
@@ -133,11 +154,15 @@ export default function SeanceForm({
         />
         {valeurs.blocs.length > 0 && (
           <p className="structure-total">
-            Total : <strong>{resumerTotaux(valeurs.blocs)}</strong>
-            {!t.dureeComplete && (
+            Total : <strong>{resumerTotaux(valeurs.blocs, options)}</strong>
+            {(!t.dureeComplete || !t.distanceComplete) && (
               <span className="texte-discret">
                 {' '}
-                (« ≥ » : une distance sans allure ne permet pas de calculer la durée)
+                (« ≈ » : valeur indicative, calculée sans allure précise
+                {valeurs.sport === SPORT_EXERCICES
+                  ? ' : environ 4 s par répétition, plus les repos'
+                  : ' : zone 2 du profil, SV1 ou 6:00 /km en course, 25 km/h à vélo'}
+                )
               </span>
             )}
           </p>
@@ -155,6 +180,9 @@ export default function SeanceForm({
             min={0}
             max={1440}
             disabled={dureeAuto !== null}
+            placeholder={
+              dureeAuto === null && t.duree > 0 ? `≈ ${Math.round(t.duree / 60)}` : undefined
+            }
           />
           {dureeAuto !== null && (
             <span className="texte-discret">Calculée à partir des blocs.</span>

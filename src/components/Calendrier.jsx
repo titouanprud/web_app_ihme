@@ -7,6 +7,7 @@ import {
   libellePeriode,
   periodeAffichee,
 } from '../calendrier.js';
+import { SPORTS } from '../blocs.js';
 import { formaterDate, toISODate } from '../dates.js';
 import { useApi } from '../useApi.js';
 import { ErrorMessage } from './Feedback.jsx';
@@ -119,6 +120,15 @@ export default function Calendrier({
           </div>
         </div>
 
+        {/* Légende : chaque séance est colorée selon son sport */}
+        <ul className="legende-sports" aria-label="Couleur des sports">
+          {SPORTS.map((sp) => (
+            <li key={sp.value} className={`sport-${sp.value}`}>
+              {sp.label}
+            </li>
+          ))}
+        </ul>
+
         <ErrorMessage
           message={seances.error || semaines.error || mois.error || reponseCycles.error}
         />
@@ -182,7 +192,7 @@ function VueJour({ jour, seances, onOuvrir, onAjouter }) {
       )}
       {duJour.length === 0 && <p className="vide">Aucune séance le {formaterDate(jour)}.</p>}
       {duJour.map((s) => (
-        <article key={s.id} className="carte vue-jour-seance">
+        <article key={s.id} className={`carte vue-jour-seance sport-${s.sport}`}>
           <div className="vue-jour-entete">
             <h2>{s.titre}</h2>
             <button type="button" className="btn btn-ghost btn-petit" onClick={() => onOuvrir(s)}>

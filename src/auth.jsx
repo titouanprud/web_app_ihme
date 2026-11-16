@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, getToken, setToken } from './api.js';
+import { oublierExercices } from './useExercices.js';
 
 // Le "contexte" rend l'utilisateur connecté accessible à tous les composants.
 const AuthContext = createContext(null);
@@ -35,6 +36,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(
     async (token) => {
       setToken(token);
+      oublierExercices();
       await refreshUser();
     },
     [refreshUser],
@@ -42,6 +44,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     setToken(null);
+    oublierExercices();
     setUser(null);
   }, []);
 

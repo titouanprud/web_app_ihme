@@ -5,6 +5,7 @@ import {
   formaterCible,
   formaterDistance,
   formaterDplus,
+  formaterExercice,
   formaterMesure,
   resumerTotaux,
 } from '../blocs.js';
@@ -19,13 +20,15 @@ function estimationDuBloc(bloc) {
 }
 
 // Affichage en lecture seule de la structure d'une séance (côté athlète et coach).
-export default function BlocsAffichage({ blocs }) {
+// sport : pour les totaux indicatifs ; avecTotal = false quand la durée et la distance
+// sont déjà affichées à côté (détail d'une séance).
+export default function BlocsAffichage({ blocs, sport, avecTotal = true }) {
   if (!blocs?.length) return null;
   return (
     <div className="blocs-affichage">
       <div className="blocs-affichage-entete">
         <h3>Structure de la séance</h3>
-        <span className="texte-discret">{resumerTotaux(blocs)}</span>
+        {avecTotal && <span className="texte-discret">{resumerTotaux(blocs, { sport })}</span>}
       </div>
       <ListeLecture blocs={blocs} />
     </div>
@@ -38,8 +41,18 @@ function ListeLecture({ blocs }) {
       {blocs.map((bloc, i) =>
         bloc.type === 'repetition' ? (
           <li key={i} className="bloc-lecture bloc-repetition">
-            <strong>{bloc.repetitions} ×</strong>
+            <strong>
+              {bloc.repetitions} ×{bloc.blocs.some((b) => b.type === 'exercice') && ' (circuit)'}
+            </strong>
             <ListeLecture blocs={bloc.blocs} />
+          </li>
+        ) : bloc.type === 'exercice' ? (
+          <li key={i} className="bloc-lecture bloc-exercice">
+            <span className="bloc-lecture-type">{bloc.nom}</span>
+            <span>
+              <strong>{formaterExercice(bloc)}</strong>
+            </span>
+            {bloc.note && <span className="texte-discret">{bloc.note}</span>}
           </li>
         ) : (
           <li key={i} className={`bloc-lecture bloc-${bloc.type}`}>

@@ -1,4 +1,4 @@
-import { formaterDistance, formaterDplus, libelleSport, totaux } from '../blocs.js';
+import { formaterDistance, formaterDplus, libelleSport, prefixeTotal, totaux } from '../blocs.js';
 import { formaterDate } from '../dates.js';
 import { dureeSeanceMin, formaterDuree, libelleType } from '../libelles.js';
 import BlocsAffichage from './BlocsAffichage.jsx';
@@ -7,8 +7,11 @@ import { StatusBadge } from './WeekCalendar.jsx';
 // Détail d'une séance et du retour de l'athlète (lecture seule).
 export default function SeanceDetails({ seance }) {
   const { retour } = seance;
-  // Distance estimée à partir des blocs (avec les allures), "≥" si incomplète
-  const t = totaux(seance.blocs ?? []);
+  // Distance estimée, enregistrée par le serveur avec le profil de l'athlète
+  // (« ≈ » si une partie est indicative : bloc sans allure, séance sans bloc)
+  const t = totaux(seance.blocs ?? [], { sport: seance.sport });
+  const distance = seance.distanceEstimeeM ?? t.distance;
+  const exacte = (seance.blocs ?? []).length > 0 && t.distanceComplete;
   return (
     <div className="details">
       <p className="details-date">{formaterDate(seance.date)}</p>
@@ -25,12 +28,12 @@ export default function SeanceDetails({ seance }) {
           <dt>Durée</dt>
           <dd>{formaterDuree(dureeSeanceMin(seance)) ?? '—'}</dd>
         </div>
-        {t.distance > 0 && (
+        {distance > 0 && (
           <div>
             <dt>Distance estimée</dt>
             <dd>
-              {t.distanceComplete ? '' : '≥ '}
-              {formaterDistance(t.distance)}
+              {prefixeTotal(exacte, false)}
+              {formaterDistance(distance)}
             </dd>
           </div>
         )}
@@ -47,7 +50,7 @@ export default function SeanceDetails({ seance }) {
           </dd>
         </div>
       </dl>
-      <BlocsAffichage blocs={seance.blocs} />
+      <BlocsAffichage blocs={seance.blocs} sport={seance.sport} avecTotal={false} />
       {seance.description && <p className="details-description">{seance.description}</p>}
 
       {retour && (
