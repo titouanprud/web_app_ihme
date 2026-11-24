@@ -1,0 +1,14 @@
+# Déploiement sur Render (Blueprint) : une seule image Docker, comme sur le serveur du cours.
+# La base est sur Neon : coller son adresse de connexion dans DATABASE_URL
+# (Render → le service → Environment), avec ?sslmode=require à la fin.
+services:
+  - type: web
+    name: coachplan
+    runtime: docker
+    plan: free
+    branch: main
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false

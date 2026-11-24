@@ -15,6 +15,7 @@ import profilRoutes from './routes/profil.js';
 import cyclesRoutes from './routes/cycles.js';
 import propositionsRoutes from './routes/propositions.js';
 import exercicesRoutes from './routes/exercices.js';
+import exportRoutes from './routes/export.js'; // temporaire (migration)
 import { apiNotFound, errorHandler } from './middlewares/errors.js';
 
 // Construit l'application Express (séparée de index.js pour pouvoir la tester).
@@ -40,6 +41,7 @@ export function createApp() {
   app.use('/api/cycles', cyclesRoutes);
   app.use('/api/propositions', propositionsRoutes);
   app.use('/api/exercices', exercicesRoutes);
+  app.use('/api/export', exportRoutes);
   app.use('/api', apiNotFound);
 
   // --- React compilé (après `npm run build`) ---
