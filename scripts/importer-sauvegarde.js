@@ -48,10 +48,14 @@ try {
      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
   );
   const cibles = new Set(existantes.map((r) => r.table_name));
+  // Une ancienne table que la migration ne crée plus (ex. invitations) n'est pas importée.
   const absentes = Object.keys(tables).filter((n) => !cibles.has(n));
-  if (absentes.length) throw new Error(`Tables absentes de la cible : ${absentes.join(', ')}`);
+  if (absentes.length) console.warn(`Tables ignorées (plus utilisées) : ${absentes.join(', ')}`);
 
-  const noms = await ordreTables(client, Object.keys(tables));
+  const noms = await ordreTables(
+    client,
+    Object.keys(tables).filter((n) => cibles.has(n)),
+  );
   const liste = noms.map((n) => client.escapeIdentifier(n)).join(', ');
   // Efface aussi ce que la migration vient d'ajouter (exercices de base, réglages).
   await client.query(`TRUNCATE ${liste} RESTART IDENTITY CASCADE`);
